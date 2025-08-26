@@ -67,6 +67,8 @@ async def fetch_page(context, url: str) -> str:
 
 async def scrape_once():
     from db import get_session, Product, Price
+    print(f"[scraper] Starting scrape run at {datetime.utcnow():%Y-%m-%d %H:%M:%S}")
+
     session = get_session()
     try:
         products = session.query(Product).filter_by(is_enabled=1).all()
@@ -74,6 +76,7 @@ async def scrape_once():
         session.close()
 
     if not products:
+        print("[scraper] No enabled products found. Nothing to scrape.")
         return
 
     async with async_playwright() as p:
@@ -83,6 +86,7 @@ async def scrape_once():
             "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
         ))
         for prod in products:
+            print(f"[scraper] Fetching prices for {prod.name} ({prod.country})")
             start = time.time()
             try:
                 html = await fetch_page(context, prod.url)
@@ -97,7 +101,12 @@ async def scrape_once():
                         upsert_daily(s, prod.id)
                     finally:
                         s.close()
+                    print(f"[scraper] Stored {len(prices)} prices: low={low:.2f}, avg5={avg:.2f}")
+                else:
+                    print("[scraper] No prices found")
                 # 10s delay between websites
+            except Exception as e:
+                print(f"[scraper] Error while processing {prod.name}: {e}")
             finally:
                 elapsed = time.time() - start
                 remain = max(0, 10.0 - elapsed)
@@ -105,6 +114,7 @@ async def scrape_once():
 
         await context.close()
         await browser.close()
+    print(f"[scraper] Scrape run finished at {datetime.utcnow():%Y-%m-%d %H:%M:%S}")
 
 def compute_trend(session, product_id: int, lookback_days: int = 7):
     """
@@ -150,6 +160,7 @@ def is_heads_up(session, product_id: int):
 
 # Hourly schedule (at most once/hour)
 def schedule_hourly():
+    print("[scraper] Starting hourly scheduler")
     sched = BackgroundScheduler(timezone="UTC")
     # run once ASAP after start, then every hour
     sched.add_job(
