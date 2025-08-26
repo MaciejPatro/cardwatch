@@ -1,0 +1,25 @@
+[Unit]
+Description=CardWatch test app
+After=network.target
+
+[Service]
+User=patro_m
+WorkingDirectory=/home/patro_m/projects/cardwatch
+ExecStart=/home/patro_m/projects/cardwatch/.venv/bin/python app.py
+Restart=always
+Environment=PYTHONUNBUFFERED=1
+
+# ---- CPU limits ----
+# Hard cap: total CPU time limited to 1 full core for this service (across all its processes).
+CPUQuota=100%
+
+# Optional: lock the service to a single CPU core (e.g., CPU 0). 
+# This prevents migration across CPUs. Change to a core you prefer (e.g., 3 or 60-63 not allowed here; use one).
+# If you only need the 1-core *cap* and don't care which CPU, you can remove this line.
+
+# (Optional) make the service a bit nicer to the rest of your desktop
+Nice=5
+
+[Install]
+WantedBy=multi-user.target
+
