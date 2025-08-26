@@ -141,10 +141,17 @@ def is_heads_up(session, product_id: int):
     if not latest:
         return False, None, None
 
-    avg7 = (session.query(func.avg(Daily.avg))
+    # Average the latest seven daily rows. "LIMIT" on an aggregate query does
+    # not restrict the rows considered by the aggregate itself, so we must
+    # compute the average over a subquery containing just the most recent
+    # seven values.
+    subq = (session.query(Daily.avg)
             .filter(Daily.product_id == product_id)
-            .order_by(Daily.day.desc()).limit(7).scalar())
-    if not avg7:
+            .order_by(Daily.day.desc())
+            .limit(7)
+            .subquery())
+    avg7 = session.query(func.avg(subq.c.avg)).scalar()
+    if avg7 is None:
         return False, latest.low, None
     return latest.low <= 0.90 * float(avg7), latest.low, float(avg7)
 
