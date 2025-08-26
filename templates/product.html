@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>{{ product.name }}</h2>
+<p><a href="{{ product.url }}" target="_blank" rel="noopener">Open listing</a> • Country filter: {{ product.country }}</p>
+
+<canvas id="hchart"></canvas>
+<canvas id="dchart" style="margin-top:24px;"></canvas>
+
+<script>
+    async function draw(){
+        const hourly = await (await fetch(`/api/product/{{product.id}}/series`)).json();
+        const daily  = await (await fetch(`/api/product/{{product.id}}/daily`)).json();
+
+        const ht = hourly.map(p => p.t);
+        const hlow = hourly.map(p => p.low);
+        const havg = hourly.map(p => p.avg5);
+
+        const dt = daily.map(p => p.d);
+        const dlow = daily.map(p => p.low);
+        const davg = daily.map(p => p.avg);
+
+        new Chart(document.getElementById('hchart'), {
+            type: 'line',
+            data: { labels: ht,
+                datasets: [
+                    { label: 'Hourly Low', data: hlow },
+                    { label: 'Hourly Avg(5)', data: havg }
+                ]
+            }
+        });
+
+        new Chart(document.getElementById('dchart'), {
+            type: 'line',
+            data: { labels: dt,
+                datasets: [
+                    { label: 'Daily Low', data: dlow },
+                    { label: 'Daily Avg', data: davg }
+                ]
+            }
+        });
+    }
+    draw();
+</script>
+{% endblock %}

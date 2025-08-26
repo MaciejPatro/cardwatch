@@ -1,0 +1,167 @@
+# scraper.py
+import asyncio, re, time
+from datetime import datetime
+
+from apscheduler.schedulers.background import BackgroundScheduler
+from bs4 import BeautifulSoup
+from playwright.async_api import async_playwright
+from db import get_session, Product, Price, upsert_daily
+from sqlalchemy import func
+
+
+PRICE_RE = re.compile(r"([\d.,]+)\s*€")
+
+def parse_prices_for_country(html: str, country_name: str):
+    """
+    Returns up to 5 lowest euro prices for rows whose location tooltip says the given country.
+    Uses provided DOM hints; robust to minor layout changes by querying by classes and spans.
+    """
+    soup = BeautifulSoup(html, "lxml")
+    table = soup.select_one("div.table.article-table.table-striped")
+    if not table:
+        return []
+
+    rows = table.select("div.article-row")
+    pairs = []
+    for r in rows:
+        # country: aria-label="Item location: Spain" is on an icon within seller column
+        loc = r.select_one(".col-seller [aria-label^='Item location:']")
+        loc_country = None
+        if loc and loc.has_attr("aria-label"):
+            lab = loc["aria-label"]
+            if ":" in lab:
+                loc_country = lab.split(":", 1)[1].strip()
+        if loc_country != country_name:
+            continue
+
+        # price lives in .col-offer -> .color-primary with euro
+        price_span = r.select_one(".col-offer .color-primary")
+        if not price_span:
+            # mobile fallback:
+            price_span = r.select_one(".mobile-offer-container .color-primary")
+        if not price_span:
+            continue
+        m = PRICE_RE.search(price_span.get_text(strip=True))
+        if not m:
+            continue
+
+        # normalize "83,00 €" -> 83.00
+        raw = m.group(1).replace(".", "").replace(",", ".")
+        try:
+            price = float(raw)
+            pairs.append(price)
+        except ValueError:
+            continue
+
+    pairs.sort()
+    return pairs[:5]
+
+async def fetch_page(context, url: str) -> str:
+    page = await context.new_page()
+    # cardmarket often requires login to buy, but listing/prices are visible
+    resp = await page.goto(url, wait_until="networkidle", timeout=60_000)
+    # sometimes anti-bot banners appear; we rely on human-like delays + Chromium
+    html = await page.content()
+    await page.close()
+    return html
+
+async def scrape_once():
+    from db import get_session, Product, Price
+    session = get_session()
+    try:
+        products = session.query(Product).filter_by(is_enabled=1).all()
+    finally:
+        session.close()
+
+    if not products:
+        return
+
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        context = await browser.new_context(user_agent=(
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        ))
+        for prod in products:
+            start = time.time()
+            try:
+                html = await fetch_page(context, prod.url)
+                prices = parse_prices_for_country(html, prod.country)
+                if prices:
+                    low = min(prices)
+                    avg = sum(prices) / len(prices)
+                    s = get_session()
+                    try:
+                        s.add(Price(product_id=prod.id, low=low, avg5=avg, n_seen=len(prices)))
+                        s.commit()
+                        upsert_daily(s, prod.id)
+                    finally:
+                        s.close()
+                # 10s delay between websites
+            finally:
+                elapsed = time.time() - start
+                remain = max(0, 10.0 - elapsed)
+                await asyncio.sleep(remain)
+
+        await context.close()
+        await browser.close()
+
+def compute_trend(session, product_id: int, lookback_days: int = 7):
+    """
+    Compare the latest 7 daily avgs to the prior 7. Return 'up' | 'down' | 'flat'.
+    """
+    from db import Daily
+    rows = (session.query(Daily)
+            .filter(Daily.product_id == product_id)
+            .order_by(Daily.day.desc()).limit(14).all())
+    if len(rows) < 10:
+        return "flat"
+    recent = [r.avg for r in rows[:7]]
+    prev   = [r.avg for r in rows[7:14]]
+    if not prev or not recent:
+        return "flat"
+    r_avg = sum(recent)/len(recent)
+    p_avg = sum(prev)/len(prev)
+    delta = (r_avg - p_avg) / p_avg if p_avg else 0.0
+    if delta > 0.03:   # +3% or more
+        return "up"
+    if delta < -0.03:  # -3% or more
+        return "down"
+    return "flat"
+
+def is_heads_up(session, product_id: int):
+    """
+    Heads-up if the latest hourly low is 10% under the 7-day daily average.
+    """
+    from db import Price, Daily
+    latest = (session.query(Price)
+              .filter(Price.product_id == product_id)
+              .order_by(Price.ts.desc())
+              .first())
+    if not latest:
+        return False, None, None
+
+    avg7 = (session.query(func.avg(Daily.avg))
+            .filter(Daily.product_id == product_id)
+            .order_by(Daily.day.desc()).limit(7).scalar())
+    if not avg7:
+        return False, latest.low, None
+    return latest.low <= 0.90 * float(avg7), latest.low, float(avg7)
+
+# Hourly schedule (at most once/hour)
+def schedule_hourly():
+    sched = BackgroundScheduler(timezone="UTC")
+    # run once ASAP after start, then every hour
+    sched.add_job(
+        lambda: asyncio.run(scrape_once()),
+        "interval",
+        hours=1,
+        next_run_time=datetime.utcnow(),  # <- immediate first run
+        max_instances=1
+    )
+    sched.start()
+    return sched
+
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(scrape_once())
