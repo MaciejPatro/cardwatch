@@ -169,6 +169,7 @@
             } else {
                 s = String(s);
             }
+            s = s.replace(/[\u2212\u2012\u2013\u2014\u2015]/g, '-');
             s = s.replace(/[^\d,.\-]/g, '').replace(/\s+/g, '');
             if (s.includes(',') && s.includes('.')) s = s.replace(/\./g, '').replace(',', '.');
             else if (s.includes(',')) s = s.replace(',', '.');
