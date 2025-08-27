@@ -25,6 +25,7 @@ class Price(Base):
     low = Column(Float, nullable=False)            # lowest of the scraped 5
     avg5 = Column(Float, nullable=False)           # average of the scraped 5
     n_seen = Column(Integer, nullable=False)       # how many rows parsed (<=5)
+    supply = Column(Integer, nullable=True)        # available items on site
 
     product = relationship("Product", back_populates="prices")
 

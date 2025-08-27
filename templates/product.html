@@ -1,7 +1,19 @@
 {% extends "base.html" %}
 {% block content %}
 <h2>{{ product.name }}</h2>
-<p><a href="{{ product.url }}" target="_blank" rel="noopener">Open listing</a> • Country filter: {{ product.country }}</p>
+<p>
+    <a href="{{ product.url }}" target="_blank" rel="noopener">Open listing</a>
+    • Country filter: {{ product.country }}
+</p>
+<div class="mb-3">
+    <a href="{{ url_for('edit', pid=product.id) }}" class="btn btn-sm btn-outline-primary">Edit</a>
+    <a href="{{ url_for('toggle', pid=product.id) }}" class="btn btn-sm btn-outline-secondary">
+        {{ 'Disable' if product.is_enabled else 'Enable' }}
+    </a>
+    <form action="{{ url_for('delete', pid=product.id) }}" method="post" class="d-inline">
+        <button class="btn btn-sm btn-outline-danger" onclick="return confirm('Delete?')">Delete</button>
+    </form>
+</div>
 
 <canvas id="hchart"></canvas>
 <canvas id="dchart" style="margin-top:24px;"></canvas>
