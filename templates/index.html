@@ -115,19 +115,19 @@
         <td>
             {% if p.pct24 is not none %}
             {% set cls = 'text-success' if p.pct24 > 0 else ('text-danger' if p.pct24 < 0 else 'text-muted') %}
-            <span class="{{ cls }}">{{ '%.2f'|format(p.pct24) }}%</span>
+            <span class="{{ cls }}">{{ '%.2f'|format(p.pct24) }}</span>
             {% else %}—{% endif %}
         </td>
         <td>
             {% if p.pct7 is not none %}
             {% set cls = 'text-success' if p.pct7 > 0 else ('text-danger' if p.pct7 < 0 else 'text-muted') %}
-            <span class="{{ cls }}">{{ '%.2f'|format(p.pct7) }}%</span>
+            <span class="{{ cls }}">{{ '%.2f'|format(p.pct7) }}</span>
             {% else %}—{% endif %}
         </td>
         <td>
             {% if p.pct30 is not none %}
             {% set cls = 'text-success' if p.pct30 > 0 else ('text-danger' if p.pct30 < 0 else 'text-muted') %}
-            <span class="{{ cls }}">{{ '%.2f'|format(p.pct30) }}%</span>
+            <span class="{{ cls }}">{{ '%.2f'|format(p.pct30) }}</span>
             {% else %}—{% endif %}
         </td>
         <td>{{ p.supply if p.supply is not none else '—' }}</td>
