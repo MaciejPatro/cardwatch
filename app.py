@@ -11,7 +11,9 @@ app = Flask(__name__)
 app.secret_key = "change-me"
 
 init_db()
-if os.environ.get("WERKZEUG_RUN_MAIN") == "true" or not app.debug:
+if not os.environ.get("CARDWATCH_DISABLE_SCHEDULER") and (
+    os.environ.get("WERKZEUG_RUN_MAIN") == "true" or not app.debug
+):
     scheduler = schedule_hourly()
 
 @app.route("/")
@@ -112,6 +114,34 @@ def add():
         except Exception as e:
             print(f"[app] Error scraping new product {pid}: {e}")
     return redirect(url_for("index"))
+
+@app.route("/edit/<int:pid>", methods=["GET", "POST"])
+def edit(pid):
+    s = get_session()
+    try:
+        p = s.get(Product, pid)
+        if not p:
+            return "Not found", 404
+        if request.method == "POST":
+            name = request.form.get("name", "").strip()
+            url = request.form.get("url", "").strip()
+            country = request.form.get("country", "").strip()
+            if not (name and url and country):
+                flash("Please provide name, url, and country.")
+            else:
+                try:
+                    p.name = name
+                    p.url = url
+                    p.country = country
+                    s.commit()
+                    flash("Updated.")
+                    return redirect(url_for("index"))
+                except Exception as e:
+                    s.rollback()
+                    flash(f"Error: {e}")
+        return render_template("edit.html", product=p)
+    finally:
+        s.close()
 
 @app.route("/toggle/<int:pid>")
 def toggle(pid):
