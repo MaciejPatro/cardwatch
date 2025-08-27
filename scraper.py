@@ -111,12 +111,12 @@ async def scrape_once(product_ids=None):
                     print(f"[scraper] Stored {len(prices)} prices: low={low:.2f}, avg5={avg:.2f}")
                 else:
                     print("[scraper] No prices found")
-                # 10s delay between websites
+                # 15s delay between websites
             except Exception as e:
                 print(f"[scraper] Error while processing {prod.name}: {e}")
             finally:
                 elapsed = time.time() - start
-                remain = max(0, 10.0 - elapsed)
+                remain = max(0, 15.0 - elapsed)
                 await asyncio.sleep(remain)
 
         await context.close()
