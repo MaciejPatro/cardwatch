@@ -156,7 +156,20 @@
     function priceSorter(a, b) {
         const toNum = s => {
             if (s == null) return NaN;
-            s = String(s).replace(/[^\d,.\-]/g, '').replace(/\s+/g, '');
+            // If bootstrap-table passes a DOM element or jQuery object,
+            // extract its textual content before parsing
+            if (typeof s === 'object') {
+                if ('textContent' in s) {
+                    s = s.textContent;
+                } else if (typeof s.text === 'function') {
+                    s = s.text();
+                } else {
+                    s = String(s);
+                }
+            } else {
+                s = String(s);
+            }
+            s = s.replace(/[^\d,.\-]/g, '').replace(/\s+/g, '');
             if (s.includes(',') && s.includes('.')) s = s.replace(/\./g, '').replace(',', '.');
             else if (s.includes(',')) s = s.replace(',', '.');
             return parseFloat(s);
@@ -172,7 +185,18 @@
     function minuteDateSorter(a, b) {
         const toTs = s => {
             if (!s) return 0;
-            const t = Date.parse(String(s).trim().replace(' ', 'T') + ':00');
+            if (typeof s === 'object') {
+                if ('textContent' in s) {
+                    s = s.textContent;
+                } else if (typeof s.text === 'function') {
+                    s = s.text();
+                } else {
+                    s = String(s);
+                }
+            } else {
+                s = String(s);
+            }
+            const t = Date.parse(s.trim().replace(' ', 'T') + ':00');
             return isNaN(t) ? 0 : t;
         };
         return toTs(a) - toTs(b);
