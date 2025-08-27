@@ -56,15 +56,18 @@
         <th data-field="current"     data-sortable="true" data-sorter="priceSorter">Current&nbsp;€</th>
         <th data-field="first"       data-sortable="true" data-sorter="priceSorter">First&nbsp;€</th>
         <th data-field="trend"       data-sortable="true">Trend</th>
+        <th data-field="pct24"       data-sortable="true" data-sorter="priceSorter">24h%</th>
+        <th data-field="pct7"        data-sortable="true" data-sorter="priceSorter">7d%</th>
+        <th data-field="pct30"       data-sortable="true" data-sorter="priceSorter">30d%</th>
+        <th data-field="supply"      data-sortable="true">Supply</th>
         <th data-field="heads"       data-sortable="true">Heads‑up</th>
         <th data-field="last_update" data-sortable="true" data-sorter="minuteDateSorter">Last update</th>
-        <th data-field="actions">Actions</th>
     </tr>
     </thead>
     <tbody>
     {% for p in products %}
-    <tr>
-        <td><a href="{{ url_for('product', pid=p.id) }}">{{ p.name }}</a></td>
+    <tr data-href="{{ url_for('product', pid=p.id) }}">
+        <td>{{ p.name }}</td>
         <td>
             {% if p.country == "Germany" %}
             <span class="fi fi-de" title="Germany"></span>
@@ -110,6 +113,22 @@
 
         <td class="trend {{ p.trend }}">{{ p.trend }}</td>
         <td>
+            {% if p.pct24 is not none %}
+            {{ '%.2f'|format(p.pct24) }}%
+            {% else %}—{% endif %}
+        </td>
+        <td>
+            {% if p.pct7 is not none %}
+            {{ '%.2f'|format(p.pct7) }}%
+            {% else %}—{% endif %}
+        </td>
+        <td>
+            {% if p.pct30 is not none %}
+            {{ '%.2f'|format(p.pct30) }}%
+            {% else %}—{% endif %}
+        </td>
+        <td>{{ p.supply if p.supply is not none else '—' }}</td>
+        <td>
             {% if p.heads %}
             <span class="badge bg-warning text-dark">
     LOW NOW: €{{ '%.2f'|format(p.current_low) }}
@@ -121,17 +140,6 @@
 
         </td>
         <td>{{ p.last_ts or '—' }}</td>
-        <td>
-            <a href="{{ url_for('edit', pid=p.id) }}" class="btn btn-sm btn-outline-primary">Edit</a>
-            <a href="{{ url_for('toggle', pid=p.id) }}" class="btn btn-sm btn-outline-secondary">
-                {{ 'Disable' if p.enabled else 'Enable' }}
-            </a>
-            <form action="{{ url_for('delete', pid=p.id) }}" method="post" class="d-inline">
-                <button class="btn btn-sm btn-outline-danger" onclick="return confirm('Delete?')">
-                    Delete
-                </button>
-            </form>
-        </td>
     </tr>
     {% endfor %}
     </tbody>
@@ -170,6 +178,11 @@
     // Activate bootstrap-table once DOM and scripts are ready
     $(function () {
         $('#mainTable').bootstrapTable();
+        $('#mainTable tbody').on('click', 'tr', function (e) {
+            if ($(e.target).closest('a, button').length) return;
+            const href = $(this).data('href');
+            if (href) window.location = href;
+        });
     });
 
     // Country dropdown handler (if you use the custom dropdown)

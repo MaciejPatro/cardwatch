@@ -11,6 +11,31 @@ from sqlalchemy import func
 
 PRICE_RE = re.compile(r"([\d.,]+)\s*€")
 
+def parse_supply(html: str):
+    """Extract total available items from page HTML.
+
+    The Cardmarket detail page presents this as a definition list with a
+    ``<dt>Available items</dt>`` followed by a ``<dd>`` containing the number.
+    Parsing the DOM structure is more reliable than searching for the phrase
+    "X available items" which may not exist when the count is zero.
+    """
+    soup = BeautifulSoup(html, "lxml")
+    dt = soup.find("dt", string=lambda s: s and s.strip().lower() == "available items")
+    if not dt:
+        return None
+    dd = dt.find_next_sibling("dd")
+    if not dd:
+        return None
+    text = dd.get_text(strip=True)
+    m = re.search(r"[\d.,]+", text)
+    if not m:
+        return None
+    raw = m.group(0).replace(".", "").replace(",", "")
+    try:
+        return int(raw)
+    except ValueError:
+        return None
+
 def parse_prices_for_country(html: str, country_name: str):
     """
     Returns up to 5 lowest euro prices for rows whose location tooltip says the given country.
@@ -98,17 +123,19 @@ async def scrape_once(product_ids=None):
             try:
                 html = await fetch_page(context, prod.url)
                 prices = parse_prices_for_country(html, prod.country)
+                supply = parse_supply(html)
                 if prices:
                     low = min(prices)
                     avg = sum(prices) / len(prices)
                     s = get_session()
                     try:
-                        s.add(Price(product_id=prod.id, low=low, avg5=avg, n_seen=len(prices)))
+                        s.add(Price(product_id=prod.id, low=low, avg5=avg,
+                                    n_seen=len(prices), supply=supply))
                         s.commit()
                         upsert_daily(s, prod.id)
                     finally:
                         s.close()
-                    print(f"[scraper] Stored {len(prices)} prices: low={low:.2f}, avg5={avg:.2f}")
+                    print(f"[scraper] Stored {len(prices)} prices: low={low:.2f}, avg5={avg:.2f}, supply={supply}")
                 else:
                     print("[scraper] No prices found")
                 # 15s delay between websites

@@ -5,7 +5,7 @@ import asyncio
 from flask import Flask, render_template, request, redirect, url_for, jsonify, flash
 from db import init_db, get_session, Product, Price, Daily
 from scraper import schedule_hourly, compute_trend, is_heads_up, scrape_once
-from datetime import datetime
+from datetime import datetime, timedelta
 
 app = Flask(__name__)
 app.secret_key = "change-me"
@@ -22,6 +22,7 @@ def index():
     try:
         products = s.query(Product).order_by(Product.name).all()
         model = []
+        now = datetime.utcnow()
         for p in products:
             trend = compute_trend(s, p.id)
             heads, now_low, avg7 = is_heads_up(s, p.id)
@@ -36,6 +37,25 @@ def index():
                       .order_by(Price.ts.asc())
                       .first())
 
+            # past prices for percent changes
+            def get_past(delta):
+                return (s.query(Price)
+                        .filter(Price.product_id == p.id,
+                                Price.ts <= now - delta)
+                        .order_by(Price.ts.desc())
+                        .first())
+
+            past24 = get_past(timedelta(hours=24))
+            past7  = get_past(timedelta(days=7))
+            past30 = get_past(timedelta(days=30))
+
+            def pct(cur, prev):
+                if cur is None or prev is None or prev == 0:
+                    return None
+                return (cur - prev) / prev * 100.0
+
+            current_low = latest.low if latest else None
+
             model.append({
                 "id": p.id,
                 "name": p.name,
@@ -47,9 +67,12 @@ def index():
                 "heads": heads,
                 "avg7": avg7,
 
-                # new fields
-                "current_low": latest.low if latest else None,
+                "current_low": current_low,
                 "first_low": first.low if first else None,
+                "pct24": pct(current_low, past24.low if past24 else None),
+                "pct7":  pct(current_low, past7.low if past7 else None),
+                "pct30": pct(current_low, past30.low if past30 else None),
+                "supply": latest.supply if latest else None,
 
                 "last_ts": latest.ts.strftime("%Y-%m-%d %H:%M") if latest else None,
             })
