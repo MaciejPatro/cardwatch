@@ -1,9 +1,10 @@
 # app.py
 import os
+import asyncio
 
 from flask import Flask, render_template, request, redirect, url_for, jsonify, flash
 from db import init_db, get_session, Product, Price, Daily
-from scraper import schedule_hourly, compute_trend, is_heads_up
+from scraper import schedule_hourly, compute_trend, is_heads_up, scrape_once
 from datetime import datetime
 
 app = Flask(__name__)
@@ -93,15 +94,23 @@ def add():
         flash("Please provide name, url, and country.")
         return redirect(url_for("index"))
     s = get_session()
+    pid = None
     try:
-        s.add(Product(name=name, url=url, country=country))
+        p = Product(name=name, url=url, country=country)
+        s.add(p)
         s.commit()
+        pid = p.id
         flash("Added.")
     except Exception as e:
         s.rollback()
         flash(f"Error: {e}")
     finally:
         s.close()
+    if pid:
+        try:
+            asyncio.run(scrape_once([pid]))
+        except Exception as e:
+            print(f"[app] Error scraping new product {pid}: {e}")
     return redirect(url_for("index"))
 
 @app.route("/toggle/<int:pid>")

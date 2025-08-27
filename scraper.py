@@ -65,13 +65,20 @@ async def fetch_page(context, url: str) -> str:
     await page.close()
     return html
 
-async def scrape_once():
+async def scrape_once(product_ids=None):
+    """Scrape prices for enabled products.
+
+    If ``product_ids`` is provided, only those product ids will be scraped.
+    """
     from db import get_session, Product, Price
     print(f"[scraper] Starting scrape run at {datetime.utcnow():%Y-%m-%d %H:%M:%S}")
 
     session = get_session()
     try:
-        products = session.query(Product).filter_by(is_enabled=1).all()
+        q = session.query(Product).filter_by(is_enabled=1)
+        if product_ids:
+            q = q.filter(Product.id.in_(product_ids))
+        products = q.all()
     finally:
         session.close()
 
