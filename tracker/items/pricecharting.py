@@ -1,11 +1,11 @@
-import requests
+import urllib.request
 from bs4 import BeautifulSoup
 
 def fetch_pricecharting_prices(url):
     try:
-        resp = requests.get(url, timeout=10)
-        resp.raise_for_status()
-        soup = BeautifulSoup(resp.text, "html.parser")
+        with urllib.request.urlopen(url, timeout=10) as resp:
+            html = resp.read().decode("utf-8", errors="ignore")
+        soup = BeautifulSoup(html, "html.parser")
 
         # PSA10 price (manual_only_price)
         psa10_price = None

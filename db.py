@@ -38,6 +38,22 @@ class Daily(Base):
     avg = Column(Float, nullable=False)
     __table_args__ = (UniqueConstraint("product_id", "day", name="uniq_daily"),)
 
+
+class Item(Base):
+    """Inventory items tracked by the old Django app."""
+    __tablename__ = "items"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(128), nullable=False)
+    buy_date = Column(Date, nullable=False)
+    link = Column(String, nullable=True)
+    graded = Column(Integer, default=0)
+    price = Column(Float, nullable=False)
+    currency = Column(String(3), nullable=False)
+    sell_price = Column(Float, nullable=True)
+    sell_date = Column(Date, nullable=True)
+    image = Column(String, nullable=True)
+
 def init_db():
     Base.metadata.create_all(ENGINE)
 
