@@ -20,8 +20,8 @@
 
 <script>
     async function draw(){
-        const hourly = await (await fetch(`/api/product/{{product.id}}/series`)).json();
-        const daily  = await (await fetch(`/api/product/{{product.id}}/daily`)).json();
+        const hourly = await (await fetch("{{ url_for('api_series', pid=product.id) }}")).json();
+        const daily  = await (await fetch("{{ url_for('api_daily', pid=product.id) }}")).json();
 
         const ht = hourly.map(p => p.t);
         const hlow = hourly.map(p => p.low);
