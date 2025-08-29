@@ -6,6 +6,7 @@
     • Country filter: {{ product.country }}
 </p>
 <div class="mb-3">
+    <a href="{{ url_for('index') }}" class="btn btn-sm btn-outline-secondary">Back</a>
     <a href="{{ url_for('edit', pid=product.id) }}" class="btn btn-sm btn-outline-primary">Edit</a>
     <a href="{{ url_for('toggle', pid=product.id) }}" class="btn btn-sm btn-outline-secondary">
         {{ 'Disable' if product.is_enabled else 'Enable' }}
