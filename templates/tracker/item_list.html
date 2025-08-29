@@ -123,3 +123,21 @@
 
     </div>
 {% endblock %}
+
+{% block extra_scripts %}
+<script>
+let cacheTs = "{{ cache_ts or '' }}";
+async function checkTrackerUpdates() {
+    try {
+        const resp = await fetch("{{ url_for('tracker.api_cache_ts') }}");
+        const data = await resp.json();
+        if (data.ts && data.ts !== cacheTs) {
+            location.reload();
+        }
+    } catch (err) {
+        console.error('update check failed', err);
+    }
+}
+setInterval(checkTrackerUpdates, 60000);
+</script>
+{% endblock %}
