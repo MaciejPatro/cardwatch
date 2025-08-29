@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% block title %}Inventory List{% endblock %}
+{% block content %}
+    <div class="container">
+        <h2>Inventory Tracker</h2>
+        <a class="btn btn-primary mb-3" href="{{ url_for('tracker.item_add') }}">Add Item</a>
+        <table class="table table-bordered table-sm table-hover bg-white align-middle">
+            <thead>
+            <tr>
+                <th>Photo</th><th>Name</th><th>Grade</th>
+                <th>Buy Date</th><th>Link</th>
+                <th>Paid</th><th>Currency</th>
+                <th>CHF</th><th>EUR</th><th>USD</th><th>Average Sell Price</th><th>Proposed Sell Price EUR</th><th>Revenue</th>
+                <th>ROI %</th><th>Sell Price</th><th>Sell Date</th><th>Edit</th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for item in items %}
+                {% set fx = fx_dict.get(item.id) %}
+                <tr>
+                    <td>
+                        {% if item.image %}
+                            <img src="{{ url_for('tracker.media', filename=item.image) }}" alt="photo" style="max-width:70px; max-height:70px;">
+                        {% endif %}
+                    </td>
+                    <td>{{ item.name }}</td>
+                    <td class="text-center">
+                        {% if item.graded %}
+                            <span class="text-success">&#10003;</span>
+                        {% else %}
+                            <span class="text-danger">&#10007;</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ item.buy_date }}</td>
+                    <td>
+                        {% if item.link %}
+                            <a href="{{ item.link }}" target="_blank">🔗</a>
+                        {% endif %}
+                    </td>
+                    <td>{{ item.price|format_float(2) }}</td>
+                    <td>{{ item.currency }}</td>
+                    <td>{{ fx.price_chf|format_float(2) if fx }}</td>
+                    <td>{{ fx.price_eur|format_float(2) if fx }}</td>
+                    <td>{{ fx.price_usd|format_float(2) if fx }}</td>
+                    <td>
+                        {% set prices = charting_prices.get(item.id) %}
+                        {% if item.graded %}
+                            {% if prices.psa10_usd %}
+                                ${{ prices.psa10_usd|format_float(2) }}
+                            {% endif %}
+                        {% else %}
+                            {% if prices.ungraded_usd %}
+                                ${{ prices.ungraded_usd|format_float(2) }}
+                            {% endif %}
+                        {% endif %}
+                    </td>
+                    <td>{{ fx.proposed_price_eur|format_float(2) if fx }}</td>
+                    <td>
+                        {% if fx.revenue is not none %}
+                            {% if fx.revenue > 0 %}
+                                <span style="color: green;">+{{ fx.revenue|format_float(2) }}</span>
+                            {% elif fx.revenue < 0 %}
+                                <span style="color: red;">{{ fx.revenue|format_float(2) }}</span>
+                            {% else %}
+                                <span style="color: black;">{{ fx.revenue|format_float(2) }}</span>
+                            {% endif %}
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if fx.revenue_pct is not none %}
+                            {% if fx.revenue_pct > 0 %}
+                                <span class="text-success">+{{ fx.revenue_pct|format_float(1) }}%</span>
+                            {% elif fx.revenue_pct < 0 %}
+                                <span class="text-danger">{{ fx.revenue_pct|format_float(1) }}%</span>
+                            {% else %}
+                                <span class="text-body">{{ fx.revenue_pct|format_float(1) }}%</span>
+                            {% endif %}
+                        {% endif %}
+                    </td>
+                    <td>{{ item.sell_price|format_float(2) if item.sell_price is not none }}</td>
+                    <td>{{ item.sell_date }}</td>
+                    <td><a class="btn btn-sm btn-outline-secondary" href="{{ url_for('tracker.item_edit', item_id=item.id) }}">Edit</a></td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        <div class="mt-3">
+            <strong>Total Invested (open):</strong> CHF {{ invested|format_float(2) }} <br>
+            <strong>
+                Possible Gain (PSA10, open):
+                {% if possible_gain_chf > 0 %}
+                    <span style="color:green;">CHF {{ possible_gain_chf|format_float(2) }}</span>
+                {% elif possible_gain_chf < 0 %}
+                    <span style="color:red;">CHF {{ possible_gain_chf|format_float(2) }}</span>
+                {% else %}
+                    <span style="color:black;">CHF {{ possible_gain_chf|format_float(2) }}</span>
+                {% endif %}
+            </strong>
+            <br>
+            <strong>Total ROI (finished):</strong>
+            {% if total_roi_pct is not none %}
+                {% if total_roi_pct > 0 %}
+                    <span style="color:green;">+{{ total_roi_pct|format_float(1) }}%</span>
+                {% elif total_roi_pct < 0 %}
+                    <span style="color:red;">{{ total_roi_pct|format_float(1) }}%</span>
+                {% else %}
+                    <span style="color:black;">{{ total_roi_pct|format_float(1) }}%</span>
+                {% endif %}
+            {% endif %} <br>
+            <strong>Profit/Loss (finished):</strong>
+            {% if realized is not none %}
+                {% if realized > 0 %}
+                    <span style="color:green;">CHF {{ realized|format_float(2) }}</span>
+                {% elif realized < 0 %}
+                    <span style="color:red;">CHF {{ realized|format_float(2) }}</span>
+                {% else %}
+                    <span style="color:black;">CHF {{ realized|format_float(2) }}</span>
+                {% endif %}
+            {% endif %}  <br>
+            <strong>Bought for (finished):</strong> CHF {{ bought_finished_chf|format_float(2) }} <br>
+            <strong>Sold for (finished):</strong> CHF {{ sold_finished_chf|format_float(2) }}
+        </div>
+
+    </div>
+{% endblock %}
