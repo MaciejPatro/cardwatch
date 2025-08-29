@@ -5,7 +5,7 @@ import asyncio
 from flask import Flask, render_template, request, redirect, url_for, jsonify, flash
 from db import init_db, get_session, Product, Price, Daily
 from scraper import schedule_hourly, compute_trend, is_heads_up, scrape_once
-from tracker_flask import tracker_bp
+from tracker_flask import tracker_bp, init_tracker_scheduler
 from datetime import datetime, timedelta
 
 app = Flask(__name__)
@@ -18,6 +18,7 @@ if not os.environ.get("CARDWATCH_DISABLE_SCHEDULER") and (
     scheduler = schedule_hourly()
 
 app.register_blueprint(tracker_bp)
+tracker_scheduler = init_tracker_scheduler()
 
 @app.route("/")
 def home():

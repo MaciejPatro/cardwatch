@@ -1,8 +1,18 @@
 import os
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal, ROUND_HALF_UP
+from threading import Thread
 
-from flask import Blueprint, render_template, request, redirect, url_for, flash, send_from_directory
+from flask import (
+    Blueprint,
+    render_template,
+    request,
+    redirect,
+    url_for,
+    flash,
+    send_from_directory,
+    jsonify,
+)
 from werkzeug.utils import secure_filename
 
 from db import get_session, Item
@@ -13,6 +23,7 @@ from tracker_utils.utils import (
     get_paid_usd,
 )
 from tracker_utils.fx import get_fx_rates
+from apscheduler.schedulers.background import BackgroundScheduler
 
 tracker_bp = Blueprint('tracker', __name__, url_prefix='/tracker')
 
@@ -21,6 +32,7 @@ UPLOAD_FOLDER = os.path.join(MEDIA_ROOT, 'item_images')
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 PRICECHARTING_CACHE = {}
+PRICECHARTING_CACHE_TS = None
 Q = Decimal('0.01')
 
 @tracker_bp.app_template_filter('dict_get')
@@ -48,18 +60,54 @@ CURRENCIES = [
 def to_dec(val):
     return Decimal(str(val)) if val is not None else Decimal('0')
 
-def get_charting_prices(items):
-    charting_prices = {}
+
+def _update_cache(items):
     for item in items:
         if item.link:
-            if item.link in PRICECHARTING_CACHE:
-                prices = PRICECHARTING_CACHE[item.link]
-            else:
-                prices = fetch_pricecharting_prices(item.link)
-                PRICECHARTING_CACHE[item.link] = prices
-            charting_prices[item.id] = prices
+            PRICECHARTING_CACHE[item.id] = fetch_pricecharting_prices(item.link)
+        else:
+            PRICECHARTING_CACHE[item.id] = {"psa10_usd": None, "ungraded_usd": None}
+    global PRICECHARTING_CACHE_TS
+    PRICECHARTING_CACHE_TS = datetime.utcnow().isoformat()
+
+
+def refresh_pricecharting_cache():
+    session = get_session()
+    try:
+        items = session.query(Item).filter(Item.link != None).all()
+    finally:
+        session.close()
+    _update_cache(items)
+
+
+def schedule_pricecharting_refresh():
+    scheduler = BackgroundScheduler()
+    scheduler.add_job(refresh_pricecharting_cache, "interval", hours=6)
+    scheduler.start()
+    return scheduler
+
+
+def init_tracker_scheduler():
+    if os.environ.get("CARDWATCH_DISABLE_SCHEDULER"):
+        return None
+    if os.environ.get("WERKZEUG_RUN_MAIN") != "true" and os.environ.get("FLASK_DEBUG"):
+        return None
+    sched = schedule_pricecharting_refresh()
+    refresh_pricecharting_cache()
+    return sched
+
+def get_charting_prices(items):
+    charting_prices = {}
+    missing = []
+    for item in items:
+        data = PRICECHARTING_CACHE.get(item.id)
+        if data is not None:
+            charting_prices[item.id] = data
         else:
             charting_prices[item.id] = {"psa10_usd": None, "ungraded_usd": None}
+            missing.append(item)
+    if missing:
+        Thread(target=_update_cache, args=(missing,), daemon=True).start()
     return charting_prices
 
 def calculate_fx_dict(items, charting_prices, fx_chf):
@@ -116,6 +164,11 @@ def calculate_possible_gain_chf(items, charting_prices, fx_chf):
                 possible_gain_usd += (ref_usd - paid_usd)
     return possible_gain_usd / fx_chf["USD"]
 
+
+@tracker_bp.route('/api/cache_ts')
+def api_cache_ts():
+    return jsonify({"ts": PRICECHARTING_CACHE_TS})
+
 @tracker_bp.route('/')
 def item_list():
     session = get_session()
@@ -156,6 +209,7 @@ def item_list():
             total_roi_pct=total_roi_pct,
             bought_finished_chf=bought_finished_chf,
             sold_finished_chf=sold_finished_chf,
+            cache_ts=PRICECHARTING_CACHE_TS,
         )
     finally:
         session.close()
