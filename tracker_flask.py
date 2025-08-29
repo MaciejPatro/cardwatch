@@ -74,7 +74,11 @@ def _update_cache(items):
 def refresh_pricecharting_cache():
     session = get_session()
     try:
-        items = session.query(Item).filter(Item.link != None).all()
+        # Load all items so that entries without a link also get a cache slot.
+        # This avoids the tracker appearing empty for items that don't have
+        # an associated PriceCharting link. Those items simply get default
+        # price information instead of being skipped entirely.
+        items = session.query(Item).all()
     finally:
         session.close()
     _update_cache(items)
