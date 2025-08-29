@@ -4,7 +4,7 @@ from datetime import date
 from db import init_db, get_session, Item
 
 
-def migrate(src_path="tracker/db.sqlite3"):
+def migrate(src_path="../tracker/db.sqlite3"):
     """Migrate Django tracker items into the SQLAlchemy database."""
     init_db()
     conn = sqlite3.connect(src_path)
