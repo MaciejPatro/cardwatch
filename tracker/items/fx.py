@@ -1,14 +1,12 @@
-import requests
+import json
+import urllib.request
 
 def get_fx_rates(base="CHF"):
     # Only supports CHF, EUR, USD as target (add more logic if needed)
     try:
-        resp = requests.get(
-            "https://api.frankfurter.app/latest",
-            params={"from": base, "to": "USD,EUR,CHF"},
-            timeout=10,
-        )
-        data = resp.json()
+        url = f"https://api.frankfurter.app/latest?from={base}&to=USD,EUR,CHF"
+        with urllib.request.urlopen(url, timeout=10) as resp:
+            data = json.load(resp)
         # The API gives rates dict, always includes 'CHF', 'USD', 'EUR'
         rates = data.get("rates", {})
         # Ensure base is included as 1.0

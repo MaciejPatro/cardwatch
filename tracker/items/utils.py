@@ -1,4 +1,4 @@
-from items.fx import get_fx_rates
+from .fx import get_fx_rates
 
 
 def get_psa10_chf(psa10_usd, fx_chf):
