@@ -17,6 +17,12 @@ if not os.environ.get("CARDWATCH_DISABLE_SCHEDULER") and (
     scheduler = schedule_hourly()
 
 @app.route("/")
+def home():
+    return render_template("home.html")
+
+
+@app.route("/cardwatch")
+@app.route("/cardwatch/")
 def index():
     s = get_session()
     try:
@@ -80,7 +86,7 @@ def index():
     finally:
         s.close()
 
-@app.route("/product/<int:pid>")
+@app.route("/cardwatch/product/<int:pid>")
 def product(pid):
     s = get_session()
     try:
@@ -92,7 +98,7 @@ def product(pid):
         s.close()
 
 
-@app.route("/api/product/<int:pid>/series")
+@app.route("/cardwatch/api/product/<int:pid>/series")
 def api_series(pid):
     s = get_session()
     try:
@@ -101,7 +107,7 @@ def api_series(pid):
     finally:
         s.close()
 
-@app.route("/api/product/<int:pid>/daily")
+@app.route("/cardwatch/api/product/<int:pid>/daily")
 def api_daily(pid):
     s = get_session()
     try:
@@ -110,7 +116,7 @@ def api_daily(pid):
     finally:
         s.close()
 
-@app.route("/add", methods=["POST"])
+@app.route("/cardwatch/add", methods=["POST"])
 def add():
     name = request.form.get("name", "").strip()
     url = request.form.get("url", "").strip()
@@ -138,7 +144,7 @@ def add():
             print(f"[app] Error scraping new product {pid}: {e}")
     return redirect(url_for("index"))
 
-@app.route("/edit/<int:pid>", methods=["GET", "POST"])
+@app.route("/cardwatch/edit/<int:pid>", methods=["GET", "POST"])
 def edit(pid):
     s = get_session()
     try:
@@ -166,7 +172,7 @@ def edit(pid):
     finally:
         s.close()
 
-@app.route("/toggle/<int:pid>")
+@app.route("/cardwatch/toggle/<int:pid>")
 def toggle(pid):
     s = get_session()
     try:
@@ -178,7 +184,7 @@ def toggle(pid):
     finally:
         s.close()
 
-@app.route("/delete/<int:pid>", methods=["POST"])
+@app.route("/cardwatch/delete/<int:pid>", methods=["POST"])
 def delete(pid):
     s = get_session()
     try:

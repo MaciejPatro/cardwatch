@@ -24,7 +24,7 @@ class EditProductTest(unittest.TestCase):
             s.close()
 
     def test_edit_updates_record(self):
-        resp = self.client.post('/edit/1', data={'name': 'new', 'url': 'u2', 'country': 'c2'}, follow_redirects=True)
+        resp = self.client.post('/cardwatch/edit/1', data={'name': 'new', 'url': 'u2', 'country': 'c2'}, follow_redirects=True)
         self.assertEqual(resp.status_code, 200)
         s = db.SessionLocal()
         try:

@@ -46,7 +46,7 @@
 <!-- Navbar -->
 <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
     <div class="container">
-        <a class="navbar-brand fw-semibold" href="{{ url_for('index') }}">CardWatch</a>
+        <a class="navbar-brand fw-semibold" href="{{ url_for('home') }}">CardWatch</a>
         <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbars"
                 aria-controls="navbars" aria-expanded="false" aria-label="Toggle navigation">
             <span class="navbar-toggler-icon"></span>
@@ -55,7 +55,10 @@
             <ul class="navbar-nav ms-auto">
                 <!-- Add more nav links if needed -->
                 <li class="nav-item">
-                    <a class="nav-link" href="{{ url_for('index') }}">Home</a>
+                    <a class="nav-link" href="{{ url_for('index') }}">CardWatch</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="/tracker/">Tracker</a>
                 </li>
             </ul>
         </div>
