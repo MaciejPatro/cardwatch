@@ -6,17 +6,17 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 from werkzeug.utils import secure_filename
 
 from db import get_session, Item
-from tracker.items.pricecharting import fetch_pricecharting_prices
-from tracker.items.utils import (
+from tracker_utils.pricecharting import fetch_pricecharting_prices
+from tracker_utils.utils import (
     get_reference_usd,
     get_reference_chf,
     get_paid_usd,
 )
-from tracker.items.fx import get_fx_rates
+from tracker_utils.fx import get_fx_rates
 
 tracker_bp = Blueprint('tracker', __name__, url_prefix='/tracker')
 
-MEDIA_ROOT = os.path.join(os.path.dirname(__file__), 'tracker', 'media')
+MEDIA_ROOT = os.path.join(os.path.dirname(__file__), 'media')
 UPLOAD_FOLDER = os.path.join(MEDIA_ROOT, 'item_images')
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
