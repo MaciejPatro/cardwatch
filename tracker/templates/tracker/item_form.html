@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Add/Edit Item{% endblock %}
+{% block content %}
+<form method="post" enctype="multipart/form-data">
+    {% csrf_token %}
+    {% for field in form %}
+        <div class="mb-3">
+            {{ field.label_tag }} {{ field }}
+            {% if field.help_text %}<small>{{ field.help_text }}</small>{% endif %}
+            {% for error in field.errors %}<div class="text-danger">{{ error }}</div>{% endfor %}
+        </div>
+    {% endfor %}
+    <button class="btn btn-primary" type="submit">Save</button>
+    <a href="{% url 'item_list' %}" class="btn btn-secondary">Back</a>
+</form>
+{% endblock %}
