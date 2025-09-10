@@ -295,3 +295,27 @@ def item_edit(item_id):
         return render_template('tracker/item_form.html', item=item, currencies=CURRENCIES)
     finally:
         session.close()
+
+
+@tracker_bp.route('/delete/<int:item_id>', methods=['POST'])
+def item_delete(item_id):
+    global PRICECHARTING_CACHE_TS
+    session = get_session()
+    try:
+        item = session.get(Item, item_id)
+        if item:
+            if item.image:
+                try:
+                    os.remove(os.path.join(MEDIA_ROOT, item.image))
+                except OSError:
+                    pass
+            session.delete(item)
+            session.commit()
+            PRICECHARTING_CACHE.pop(item_id, None)
+            PRICECHARTING_CACHE_TS = datetime.utcnow().isoformat()
+            flash('Item deleted.')
+        else:
+            flash('Item not found.')
+        return redirect(url_for('tracker.item_list'))
+    finally:
+        session.close()

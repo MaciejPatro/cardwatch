@@ -48,4 +48,9 @@
     <button class="btn btn-primary" type="submit">Save</button>
     <a href="{{ url_for('tracker.item_list') }}" class="btn btn-secondary">Back</a>
 </form>
+{% if item %}
+<form action="{{ url_for('tracker.item_delete', item_id=item.id) }}" method="post" class="mt-2">
+    <button class="btn btn-danger" type="submit">Delete</button>
+</form>
+{% endif %}
 {% endblock %}
