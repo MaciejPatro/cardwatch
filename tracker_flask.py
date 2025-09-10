@@ -2,6 +2,7 @@ import os
 from datetime import date, datetime
 from decimal import Decimal, ROUND_HALF_UP
 from threading import Thread
+import uuid
 
 from flask import (
     Blueprint,
@@ -56,6 +57,15 @@ CURRENCIES = [
     ("USD", "US Dollar"),
     ("PLN", "Polish Zloty"),
 ]
+
+def save_uploaded_image(image):
+    """Save an uploaded image with a unique filename."""
+    filename = secure_filename(image.filename)
+    unique_filename = f"{uuid.uuid4().hex}_{filename}"
+    os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+    relative_path = os.path.join('item_images', unique_filename)
+    image.save(os.path.join(MEDIA_ROOT, relative_path))
+    return relative_path
 
 def to_dec(val):
     return Decimal(str(val)) if val is not None else Decimal('0')
@@ -233,12 +243,7 @@ def item_add():
         sell_date = date.fromisoformat(sell_date_val) if sell_date_val else None
 
         image = request.files.get('image')
-        image_path = None
-        if image and image.filename:
-            filename = secure_filename(image.filename)
-            os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-            image_path = os.path.join('item_images', filename)
-            image.save(os.path.join(MEDIA_ROOT, image_path))
+        image_path = save_uploaded_image(image) if image and image.filename else None
 
         session = get_session()
         try:
@@ -282,11 +287,7 @@ def item_edit(item_id):
 
             image = request.files.get('image')
             if image and image.filename:
-                filename = secure_filename(image.filename)
-                os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-                image_path = os.path.join('item_images', filename)
-                image.save(os.path.join(MEDIA_ROOT, image_path))
-                item.image = image_path
+                item.image = save_uploaded_image(image)
 
             session.commit()
             flash('Item updated.')
