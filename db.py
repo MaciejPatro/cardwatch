@@ -53,6 +53,7 @@ class Item(Base):
     sell_price = Column(Float, nullable=True)
     sell_date = Column(Date, nullable=True)
     image = Column(String, nullable=True)
+    not_for_sale = Column(Integer, default=0)
 
 def init_db():
     Base.metadata.create_all(ENGINE)

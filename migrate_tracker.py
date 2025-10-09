@@ -25,6 +25,7 @@ def migrate(src_path="../tracker/db.sqlite3"):
             sell_price=float(sell_price) if sell_price is not None else None,
             sell_date=date.fromisoformat(sell_date) if sell_date else None,
             image=image or None,
+            not_for_sale=0,
         )
         session.add(item)
     session.commit()
