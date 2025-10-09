@@ -189,11 +189,18 @@ def api_cache_ts():
 def item_list():
     session = get_session()
     try:
+        hide_not_for_sale = request.args.get('hide_not_for_sale') == '1'
+
         items = session.query(Item).order_by(Item.buy_date.desc()).all()
         fx_chf = get_fx_rates("CHF")
         charting_prices = get_charting_prices(items)
         fx_dict = calculate_fx_dict(items, charting_prices, fx_chf)
         possible_gain_chf = calculate_possible_gain_chf(items, charting_prices, fx_chf)
+
+        visible_items = [
+            item for item in items
+            if not (hide_not_for_sale and item.not_for_sale)
+        ]
 
         invested = sum(
             float(item.price) * get_fx_rates(item.currency)["CHF"]
@@ -221,7 +228,7 @@ def item_list():
 
         return render_template(
             'tracker/item_list.html',
-            items=items,
+            items=visible_items,
             fx_dict=fx_dict,
             charting_prices=charting_prices,
             invested=invested,
@@ -232,6 +239,7 @@ def item_list():
             sold_finished_chf=sold_finished_chf,
             cache_ts=PRICECHARTING_CACHE_TS,
             not_for_sale_total_chf=not_for_sale_total_chf,
+            hide_not_for_sale=hide_not_for_sale,
         )
     finally:
         session.close()

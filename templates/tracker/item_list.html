@@ -3,6 +3,14 @@
 {% block content %}
     <div class="container">
         <h2>Inventory Tracker</h2>
+        <form class="mb-3" method="get">
+            <div class="form-check">
+                <input class="form-check-input" type="checkbox" value="1" id="hide-not-for-sale" name="hide_not_for_sale" onchange="this.form.submit()" {% if hide_not_for_sale %}checked{% endif %}>
+                <label class="form-check-label" for="hide-not-for-sale">
+                    Hide not for sale items
+                </label>
+            </div>
+        </form>
         <a class="btn btn-primary mb-3" href="{{ url_for('tracker.item_add') }}">Add Item</a>
         <table class="table table-bordered table-sm table-hover bg-white align-middle">
             <thead>
