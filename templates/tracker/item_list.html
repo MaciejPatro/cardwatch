@@ -7,7 +7,7 @@
         <table class="table table-bordered table-sm table-hover bg-white align-middle">
             <thead>
             <tr>
-                <th>Photo</th><th>Name</th><th>Grade</th>
+                <th>Photo</th><th>Name</th><th>Grade</th><th>Not for Sale</th>
                 <th>Buy Date</th><th>Link</th>
                 <th>Paid</th><th>Currency</th>
                 <th>CHF</th><th>EUR</th><th>USD</th><th>Average Sell Price</th><th>Proposed Sell Price EUR</th><th>Revenue</th>
@@ -17,7 +17,7 @@
             <tbody>
             {% for item in items %}
                 {% set fx = fx_dict.get(item.id) %}
-                <tr>
+                <tr{% if item.not_for_sale %} class="table-secondary text-muted"{% endif %}>
                     <td>
                         {% if item.image %}
                             <img src="{{ url_for('tracker.media', filename=item.image) }}" alt="photo" style="max-width:70px; max-height:70px;">
@@ -29,6 +29,13 @@
                             <span class="text-success">&#10003;</span>
                         {% else %}
                             <span class="text-danger">&#10007;</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-center">
+                        {% if item.not_for_sale %}
+                            <span class="text-secondary">Yes</span>
+                        {% else %}
+                            No
                         {% endif %}
                     </td>
                     <td>{{ item.buy_date }}</td>
@@ -97,6 +104,7 @@
                 {% endif %}
             </strong>
             <br>
+            <strong>Not for Sale Cost:</strong> CHF {{ not_for_sale_total_chf|format_float(2) }} <br>
             <strong>Total ROI (finished):</strong>
             {% if total_roi_pct is not none %}
                 {% if total_roi_pct > 0 %}

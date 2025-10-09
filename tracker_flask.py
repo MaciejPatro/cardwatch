@@ -171,6 +171,8 @@ def calculate_fx_dict(items, charting_prices, fx_chf):
 def calculate_possible_gain_chf(items, charting_prices, fx_chf):
     possible_gain_usd = 0.0
     for item in items:
+        if item.not_for_sale:
+            continue
         if not (item.sell_price and item.sell_date):
             paid_usd = get_paid_usd(item)
             ref_usd = get_reference_usd(item, charting_prices)
@@ -195,7 +197,8 @@ def item_list():
 
         invested = sum(
             float(item.price) * get_fx_rates(item.currency)["CHF"]
-            for item in items if not (item.sell_price and item.sell_date)
+            for item in items
+            if not item.not_for_sale and not (item.sell_price and item.sell_date)
         )
         realized = sum(
             (float(item.sell_price) - float(item.price) * get_fx_rates(item.currency)["CHF"])
@@ -211,6 +214,10 @@ def item_list():
             float(item.sell_price)
             for item in items if item.sell_price and item.sell_date
         )
+        not_for_sale_total_chf = sum(
+            float(item.price) * get_fx_rates(item.currency)["CHF"]
+            for item in items if item.not_for_sale
+        )
 
         return render_template(
             'tracker/item_list.html',
@@ -224,6 +231,7 @@ def item_list():
             bought_finished_chf=bought_finished_chf,
             sold_finished_chf=sold_finished_chf,
             cache_ts=PRICECHARTING_CACHE_TS,
+            not_for_sale_total_chf=not_for_sale_total_chf,
         )
     finally:
         session.close()
@@ -241,6 +249,7 @@ def item_add():
         sell_price = float(sell_price_val) if sell_price_val else None
         sell_date_val = request.form.get('sell_date')
         sell_date = date.fromisoformat(sell_date_val) if sell_date_val else None
+        not_for_sale = 1 if request.form.get('not_for_sale') else 0
 
         image = request.files.get('image')
         image_path = save_uploaded_image(image) if image and image.filename else None
@@ -257,6 +266,7 @@ def item_add():
                 sell_price=sell_price,
                 sell_date=sell_date,
                 image=image_path,
+                not_for_sale=not_for_sale,
             )
             session.add(item)
             session.commit()
@@ -284,6 +294,7 @@ def item_edit(item_id):
             item.sell_price = float(sp) if sp else None
             sd = request.form.get('sell_date')
             item.sell_date = date.fromisoformat(sd) if sd else None
+            item.not_for_sale = 1 if request.form.get('not_for_sale') else 0
 
             image = request.files.get('image')
             if image and image.filename:
