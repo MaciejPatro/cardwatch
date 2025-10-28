@@ -268,6 +268,44 @@ def calculate_monthly_tracker_stats(items):
     return results
 
 
+def calculate_sale_time_stats(items):
+    total_items = len(items)
+    sale_durations = [
+        (item.sell_date - item.buy_date).days
+        for item in items
+        if item.buy_date and item.sell_date
+    ]
+
+    sold_items = len(sale_durations)
+    average_sale_days = None
+    if sold_items:
+        average_sale_days = (
+            Decimal(sum(sale_durations)) / Decimal(sold_items)
+        ).quantize(Decimal('0.1'), rounding=ROUND_HALF_UP)
+
+    active_listings = sum(
+        1 for item in items if not item.sell_date and not item.not_for_sale
+    )
+    not_for_sale_inventory = sum(
+        1 for item in items if not item.sell_date and item.not_for_sale
+    )
+
+    sell_through_pct = None
+    if total_items:
+        sell_through_pct = (
+            (Decimal(sold_items) / Decimal(total_items)) * Decimal('100')
+        ).quantize(Decimal('0.1'), rounding=ROUND_HALF_UP)
+
+    return {
+        'average_sale_days': average_sale_days,
+        'sold_items': sold_items,
+        'active_listings': active_listings,
+        'not_for_sale_inventory': not_for_sale_inventory,
+        'total_items': total_items,
+        'sell_through_pct': sell_through_pct,
+    }
+
+
 @tracker_bp.route('/api/cache_ts')
 def api_cache_ts():
     return jsonify({"ts": PRICECHARTING_CACHE_TS})
@@ -338,11 +376,17 @@ def stats_overview():
     try:
         items = session.query(Item).order_by(Item.buy_date.asc()).all()
         monthly_stats = calculate_monthly_tracker_stats(items)
+        sale_time_stats = calculate_sale_time_stats(items)
         totals = {
             'buy_total': sum((entry['buy_total'] for entry in monthly_stats), Decimal('0')).quantize(Q, rounding=ROUND_HALF_UP),
             'sell_total': sum((entry['sell_total'] for entry in monthly_stats), Decimal('0')).quantize(Q, rounding=ROUND_HALF_UP),
             'revenue': sum((entry['revenue'] for entry in monthly_stats), Decimal('0')).quantize(Q, rounding=ROUND_HALF_UP),
         }
+        insight_suggestions = [
+            'Track the sell-through rate over time to spot changes in demand.',
+            'Review active listings that have been live the longest to consider repricing or promotions.',
+            'Compare the capital tied up in not-for-sale items against realized revenue to guide future purchases.',
+        ]
     finally:
         session.close()
 
@@ -350,6 +394,8 @@ def stats_overview():
         'tracker/stats_overview.html',
         monthly_stats=monthly_stats,
         totals=totals,
+        summary_stats=sale_time_stats,
+        insight_suggestions=insight_suggestions,
     )
 
 

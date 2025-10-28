@@ -10,6 +10,61 @@
         </div>
     </div>
 
+    <div class="row row-cols-1 row-cols-md-3 g-3 mb-4">
+        <div class="col">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h6 class="text-uppercase text-muted fw-semibold">Average days to sell</h6>
+                    {% if summary_stats['average_sale_days'] is not none %}
+                        <div class="display-6">{{ summary_stats['average_sale_days']|format_float(1) }}</div>
+                        <p class="text-muted mb-0">
+                            Across {{ summary_stats['sold_items'] }} sold {{ 'item' if summary_stats['sold_items'] == 1 else 'items' }}.
+                        </p>
+                    {% else %}
+                        <p class="text-muted mb-0">Not enough sold items yet to calculate an average.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        <div class="col">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h6 class="text-uppercase text-muted fw-semibold">Sell-through rate</h6>
+                    {% if summary_stats['sell_through_pct'] is not none %}
+                        <div class="display-6">{{ summary_stats['sell_through_pct']|format_float(1) }}%</div>
+                        <p class="text-muted mb-0">
+                            {{ summary_stats['sold_items'] }} of {{ summary_stats['total_items'] }} tracked {{ 'item' if summary_stats['total_items'] == 1 else 'items' }} sold.
+                        </p>
+                    {% else %}
+                        <p class="text-muted mb-0">Add tracker entries to see your sell-through rate.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        <div class="col">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h6 class="text-uppercase text-muted fw-semibold">Active inventory</h6>
+                    <p class="mb-1">Active listings: <strong>{{ summary_stats['active_listings'] }}</strong></p>
+                    <p class="mb-0">Not for sale: <strong>{{ summary_stats['not_for_sale_inventory'] }}</strong></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% if insight_suggestions %}
+        <div class="card mb-4">
+            <div class="card-header">Other insights you may find useful</div>
+            <div class="card-body">
+                <ul class="mb-0">
+                    {% for suggestion in insight_suggestions %}
+                        <li>{{ suggestion }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+    {% endif %}
+
     {% if monthly_stats %}
         <div class="table-responsive">
             <table class="table table-bordered table-sm table-hover bg-white align-middle">
