@@ -33,7 +33,7 @@
                     {% if summary_stats['sell_through_pct'] is not none %}
                         <div class="display-6">{{ summary_stats['sell_through_pct']|format_float(1) }}%</div>
                         <p class="text-muted mb-0">
-                            {{ summary_stats['sold_items'] }} of {{ summary_stats['total_items'] }} tracked {{ 'item' if summary_stats['total_items'] == 1 else 'items' }} sold.
+                            {{ summary_stats['sold_items'] }} of {{ summary_stats['sellable_items'] }} sellable {{ 'item' if summary_stats['sellable_items'] == 1 else 'items' }} sold.
                         </p>
                     {% else %}
                         <p class="text-muted mb-0">Add tracker entries to see your sell-through rate.</p>
@@ -72,6 +72,7 @@
                 <tr>
                     <th scope="col">Month</th>
                     <th scope="col">Bought (CHF)</th>
+                    <th scope="col">Not for Sale (CHF)</th>
                     <th scope="col">Sold (CHF)</th>
                     <th scope="col">Revenue (CHF)</th>
                     <th scope="col">ROI (%)</th>
@@ -82,6 +83,7 @@
                     <tr>
                         <td>{{ entry.label }}</td>
                         <td>CHF {{ entry.buy_total|format_float(2) }}</td>
+                        <td>CHF {{ entry.not_for_sale_total|format_float(2) }}</td>
                         <td>CHF {{ entry.sell_total|format_float(2) }}</td>
                         <td>
                             {% if entry.revenue > 0 %}
@@ -112,6 +114,7 @@
                 <tr>
                     <th scope="row">Total</th>
                     <th>CHF {{ totals.buy_total|format_float(2) }}</th>
+                    <th>CHF {{ totals.not_for_sale_total|format_float(2) }}</th>
                     <th>CHF {{ totals.sell_total|format_float(2) }}</th>
                     <th>
                         {% if totals.revenue > 0 %}
