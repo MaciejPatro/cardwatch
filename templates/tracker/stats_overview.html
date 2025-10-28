@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Tracker Statistics{% endblock %}
+{% block content %}
+<div class="container">
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+        <h2 class="mb-0">Tracker Statistics</h2>
+        <div class="d-flex flex-wrap gap-2">
+            <a class="btn btn-outline-secondary" href="{{ url_for('tracker.item_list') }}">Back to Tracker</a>
+            <a class="btn btn-primary" href="{{ url_for('tracker.revenue_trend') }}">Revenue Trend</a>
+        </div>
+    </div>
+
+    {% if monthly_stats %}
+        <div class="table-responsive">
+            <table class="table table-bordered table-sm table-hover bg-white align-middle">
+                <thead class="table-light">
+                <tr>
+                    <th scope="col">Month</th>
+                    <th scope="col">Bought (CHF)</th>
+                    <th scope="col">Sold (CHF)</th>
+                    <th scope="col">Revenue (CHF)</th>
+                    <th scope="col">ROI (%)</th>
+                </tr>
+                </thead>
+                <tbody>
+                {% for entry in monthly_stats %}
+                    <tr>
+                        <td>{{ entry.label }}</td>
+                        <td>CHF {{ entry.buy_total|format_float(2) }}</td>
+                        <td>CHF {{ entry.sell_total|format_float(2) }}</td>
+                        <td>
+                            {% if entry.revenue > 0 %}
+                                <span class="text-success">+CHF {{ entry.revenue|format_float(2) }}</span>
+                            {% elif entry.revenue < 0 %}
+                                <span class="text-danger">CHF {{ entry.revenue|format_float(2) }}</span>
+                            {% else %}
+                                CHF {{ entry.revenue|format_float(2) }}
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if entry.roi_pct is not none %}
+                                {% if entry.roi_pct > 0 %}
+                                    <span class="text-success">+{{ entry.roi_pct|format_float(1) }}%</span>
+                                {% elif entry.roi_pct < 0 %}
+                                    <span class="text-danger">{{ entry.roi_pct|format_float(1) }}%</span>
+                                {% else %}
+                                    <span class="text-body">{{ entry.roi_pct|format_float(1) }}%</span>
+                                {% endif %}
+                            {% else %}
+                                &mdash;
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+                <tfoot class="table-light">
+                <tr>
+                    <th scope="row">Total</th>
+                    <th>CHF {{ totals.buy_total|format_float(2) }}</th>
+                    <th>CHF {{ totals.sell_total|format_float(2) }}</th>
+                    <th>
+                        {% if totals.revenue > 0 %}
+                            <span class="text-success">+CHF {{ totals.revenue|format_float(2) }}</span>
+                        {% elif totals.revenue < 0 %}
+                            <span class="text-danger">CHF {{ totals.revenue|format_float(2) }}</span>
+                        {% else %}
+                            CHF {{ totals.revenue|format_float(2) }}
+                        {% endif %}
+                    </th>
+                    <th>&mdash;</th>
+                </tr>
+                </tfoot>
+            </table>
+        </div>
+    {% else %}
+        <div class="alert alert-info">No tracker data available yet. Start adding items to see statistics.</div>
+    {% endif %}
+</div>
+{% endblock %}

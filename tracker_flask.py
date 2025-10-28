@@ -1,4 +1,5 @@
 import os
+from collections import OrderedDict
 from datetime import date, datetime
 from decimal import Decimal, ROUND_HALF_UP
 from threading import Thread
@@ -181,6 +182,92 @@ def calculate_possible_gain_chf(items, charting_prices, fx_chf):
     return possible_gain_usd / fx_chf["USD"]
 
 
+def _month_start(d: date) -> date:
+    return date(d.year, d.month, 1)
+
+
+def _iterate_months(start: date, end: date):
+    current = date(start.year, start.month, 1)
+    while current <= end:
+        yield current
+        if current.month == 12:
+            current = date(current.year + 1, 1, 1)
+        else:
+            current = date(current.year, current.month + 1, 1)
+
+
+def calculate_monthly_tracker_stats(items):
+    items_with_buy_dates = [item for item in items if item.buy_date]
+    if not items_with_buy_dates:
+        return []
+
+    all_dates = [item.buy_date for item in items_with_buy_dates]
+    all_dates.extend([item.sell_date for item in items if item.sell_date])
+    relevant_dates = [d for d in all_dates if d is not None]
+    if not relevant_dates:
+        return []
+
+    start_month = _month_start(min(relevant_dates))
+    end_month = _month_start(max(relevant_dates))
+
+    monthly_totals = OrderedDict(
+        (month, {
+            'buy_total': Decimal('0'),
+            'sell_total': Decimal('0'),
+            'cost_sold': Decimal('0'),
+            'revenue': Decimal('0'),
+        })
+        for month in _iterate_months(start_month, end_month)
+    )
+
+    currency_to_chf = {}
+    for item in items_with_buy_dates:
+        currency = item.currency
+        if currency not in currency_to_chf:
+            currency_to_chf[currency] = Decimal(str(get_fx_rates(currency).get('CHF', 1.0)))
+
+    for item in items_with_buy_dates:
+        buy_month = _month_start(item.buy_date)
+        fx_rate = currency_to_chf.get(item.currency, Decimal('1'))
+        buy_value_chf = to_dec(item.price) * fx_rate
+        monthly_totals[buy_month]['buy_total'] += buy_value_chf
+
+        if item.sell_price is not None and item.sell_date:
+            sell_month = _month_start(item.sell_date)
+            sell_total = to_dec(item.sell_price)
+            revenue = sell_total - buy_value_chf
+            monthly_totals.setdefault(sell_month, {
+                'buy_total': Decimal('0'),
+                'sell_total': Decimal('0'),
+                'cost_sold': Decimal('0'),
+                'revenue': Decimal('0'),
+            })
+            monthly_totals[sell_month]['sell_total'] += sell_total
+            monthly_totals[sell_month]['cost_sold'] += buy_value_chf
+            monthly_totals[sell_month]['revenue'] += revenue
+
+    results = []
+    for month, data in monthly_totals.items():
+        buy_total = data['buy_total'].quantize(Q, rounding=ROUND_HALF_UP)
+        sell_total = data['sell_total'].quantize(Q, rounding=ROUND_HALF_UP)
+        revenue = data['revenue'].quantize(Q, rounding=ROUND_HALF_UP)
+        cost_sold = data['cost_sold']
+        roi_pct = None
+        if cost_sold > 0:
+            roi_pct = (data['revenue'] / cost_sold * Decimal('100')).quantize(Q, rounding=ROUND_HALF_UP)
+
+        results.append({
+            'month': month,
+            'label': month.strftime('%B %Y'),
+            'buy_total': buy_total,
+            'sell_total': sell_total,
+            'revenue': revenue,
+            'roi_pct': roi_pct,
+        })
+
+    return results
+
+
 @tracker_bp.route('/api/cache_ts')
 def api_cache_ts():
     return jsonify({"ts": PRICECHARTING_CACHE_TS})
@@ -243,6 +330,47 @@ def item_list():
         )
     finally:
         session.close()
+
+
+@tracker_bp.route('/stats')
+def stats_overview():
+    session = get_session()
+    try:
+        items = session.query(Item).order_by(Item.buy_date.asc()).all()
+        monthly_stats = calculate_monthly_tracker_stats(items)
+        totals = {
+            'buy_total': sum((entry['buy_total'] for entry in monthly_stats), Decimal('0')).quantize(Q, rounding=ROUND_HALF_UP),
+            'sell_total': sum((entry['sell_total'] for entry in monthly_stats), Decimal('0')).quantize(Q, rounding=ROUND_HALF_UP),
+            'revenue': sum((entry['revenue'] for entry in monthly_stats), Decimal('0')).quantize(Q, rounding=ROUND_HALF_UP),
+        }
+    finally:
+        session.close()
+
+    return render_template(
+        'tracker/stats_overview.html',
+        monthly_stats=monthly_stats,
+        totals=totals,
+    )
+
+
+@tracker_bp.route('/stats/revenue-trend')
+def revenue_trend():
+    session = get_session()
+    try:
+        items = session.query(Item).order_by(Item.buy_date.asc()).all()
+        monthly_stats = calculate_monthly_tracker_stats(items)
+    finally:
+        session.close()
+
+    chart_labels = [entry['label'] for entry in monthly_stats]
+    chart_revenue = [float(entry['revenue']) for entry in monthly_stats]
+
+    return render_template(
+        'tracker/revenue_chart.html',
+        monthly_stats=monthly_stats,
+        chart_labels=chart_labels,
+        chart_revenue=chart_revenue,
+    )
 
 @tracker_bp.route('/add', methods=['GET', 'POST'])
 def item_add():
