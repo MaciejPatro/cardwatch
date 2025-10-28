@@ -91,3 +91,76 @@ def test_calculate_monthly_tracker_stats(monkeypatch):
     assert march['sell_total'] == Decimal('230.00')
     assert march['revenue'] == Decimal('85.00')
     assert march['roi_pct'] == Decimal('58.62')
+
+
+def test_calculate_sale_time_stats():
+    session = get_session()
+    session.query(Item).delete()
+    session.commit()
+
+    items = [
+        Item(
+            name='Alpha',
+            buy_date=date(2024, 1, 1),
+            link=None,
+            graded=0,
+            price=100.0,
+            currency='CHF',
+            sell_price=120.0,
+            sell_date=date(2024, 1, 11),
+            not_for_sale=0,
+        ),
+        Item(
+            name='Beta',
+            buy_date=date(2024, 2, 1),
+            link=None,
+            graded=0,
+            price=50.0,
+            currency='CHF',
+            sell_price=None,
+            sell_date=None,
+            not_for_sale=0,
+        ),
+        Item(
+            name='Gamma',
+            buy_date=date(2024, 2, 10),
+            link=None,
+            graded=0,
+            price=75.0,
+            currency='CHF',
+            sell_price=90.0,
+            sell_date=date(2024, 3, 1),
+            not_for_sale=0,
+        ),
+        Item(
+            name='Delta',
+            buy_date=date(2024, 3, 5),
+            link=None,
+            graded=0,
+            price=30.0,
+            currency='CHF',
+            sell_price=None,
+            sell_date=None,
+            not_for_sale=1,
+        ),
+    ]
+
+    session.add_all(items)
+    session.commit()
+    ids = [item.id for item in items]
+
+    try:
+        stats = tracker_flask.calculate_sale_time_stats(
+            session.query(Item).order_by(Item.buy_date.asc()).all()
+        )
+    finally:
+        session.query(Item).filter(Item.id.in_(ids)).delete(synchronize_session=False)
+        session.commit()
+        session.close()
+
+    assert stats['average_sale_days'] == Decimal('15.0')
+    assert stats['sold_items'] == 2
+    assert stats['active_listings'] == 1
+    assert stats['not_for_sale_inventory'] == 1
+    assert stats['total_items'] == 4
+    assert stats['sell_through_pct'] == Decimal('50.0')
