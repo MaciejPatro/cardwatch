@@ -216,6 +216,7 @@ def calculate_monthly_tracker_stats(items):
             'sell_total': Decimal('0'),
             'cost_sold': Decimal('0'),
             'revenue': Decimal('0'),
+            'not_for_sale_total': Decimal('0'),
         })
         for month in _iterate_months(start_month, end_month)
     )
@@ -230,7 +231,10 @@ def calculate_monthly_tracker_stats(items):
         buy_month = _month_start(item.buy_date)
         fx_rate = currency_to_chf.get(item.currency, Decimal('1'))
         buy_value_chf = to_dec(item.price) * fx_rate
-        monthly_totals[buy_month]['buy_total'] += buy_value_chf
+        if item.not_for_sale:
+            monthly_totals[buy_month]['not_for_sale_total'] += buy_value_chf
+        else:
+            monthly_totals[buy_month]['buy_total'] += buy_value_chf
 
         if item.sell_price is not None and item.sell_date:
             sell_month = _month_start(item.sell_date)
@@ -241,6 +245,7 @@ def calculate_monthly_tracker_stats(items):
                 'sell_total': Decimal('0'),
                 'cost_sold': Decimal('0'),
                 'revenue': Decimal('0'),
+                'not_for_sale_total': Decimal('0'),
             })
             monthly_totals[sell_month]['sell_total'] += sell_total
             monthly_totals[sell_month]['cost_sold'] += buy_value_chf
@@ -251,6 +256,7 @@ def calculate_monthly_tracker_stats(items):
         buy_total = data['buy_total'].quantize(Q, rounding=ROUND_HALF_UP)
         sell_total = data['sell_total'].quantize(Q, rounding=ROUND_HALF_UP)
         revenue = data['revenue'].quantize(Q, rounding=ROUND_HALF_UP)
+        not_for_sale_total = data['not_for_sale_total'].quantize(Q, rounding=ROUND_HALF_UP)
         cost_sold = data['cost_sold']
         roi_pct = None
         if cost_sold > 0:
@@ -262,6 +268,7 @@ def calculate_monthly_tracker_stats(items):
             'buy_total': buy_total,
             'sell_total': sell_total,
             'revenue': revenue,
+            'not_for_sale_total': not_for_sale_total,
             'roi_pct': roi_pct,
         })
 
@@ -270,6 +277,7 @@ def calculate_monthly_tracker_stats(items):
 
 def calculate_sale_time_stats(items):
     total_items = len(items)
+    sellable_items = sum(1 for item in items if not item.not_for_sale)
     sale_durations = [
         (item.sell_date - item.buy_date).days
         for item in items
@@ -291,9 +299,9 @@ def calculate_sale_time_stats(items):
     )
 
     sell_through_pct = None
-    if total_items:
+    if sellable_items:
         sell_through_pct = (
-            (Decimal(sold_items) / Decimal(total_items)) * Decimal('100')
+            (Decimal(sold_items) / Decimal(sellable_items)) * Decimal('100')
         ).quantize(Decimal('0.1'), rounding=ROUND_HALF_UP)
 
     return {
@@ -302,6 +310,7 @@ def calculate_sale_time_stats(items):
         'active_listings': active_listings,
         'not_for_sale_inventory': not_for_sale_inventory,
         'total_items': total_items,
+        'sellable_items': sellable_items,
         'sell_through_pct': sell_through_pct,
     }
 
@@ -381,6 +390,7 @@ def stats_overview():
             'buy_total': sum((entry['buy_total'] for entry in monthly_stats), Decimal('0')).quantize(Q, rounding=ROUND_HALF_UP),
             'sell_total': sum((entry['sell_total'] for entry in monthly_stats), Decimal('0')).quantize(Q, rounding=ROUND_HALF_UP),
             'revenue': sum((entry['revenue'] for entry in monthly_stats), Decimal('0')).quantize(Q, rounding=ROUND_HALF_UP),
+            'not_for_sale_total': sum((entry['not_for_sale_total'] for entry in monthly_stats), Decimal('0')).quantize(Q, rounding=ROUND_HALF_UP),
         }
         insight_suggestions = [
             'Track the sell-through rate over time to spot changes in demand.',
