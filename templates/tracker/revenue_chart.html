@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}Monthly Revenue Trend{% endblock %}
+{% block content %}
+<div class="container">
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+        <h2 class="mb-0">Monthly Revenue Trend</h2>
+        <div class="d-flex flex-wrap gap-2">
+            <a class="btn btn-outline-secondary" href="{{ url_for('tracker.stats_overview') }}">Back to Statistics</a>
+            <a class="btn btn-outline-primary" href="{{ url_for('tracker.item_list') }}">Back to Tracker</a>
+        </div>
+    </div>
+
+    {% if monthly_stats %}
+        <div class="card">
+            <div class="card-body">
+                <canvas id="revenueChart" height="320"></canvas>
+            </div>
+        </div>
+    {% else %}
+        <div class="alert alert-info">No revenue data available yet. Complete some sales to see the trend.</div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+{{ super() }}
+<script>
+    const labels = {{ chart_labels|tojson }};
+    const revenueData = {{ chart_revenue|tojson }};
+
+    if (labels.length > 0) {
+        const ctx = document.getElementById('revenueChart').getContext('2d');
+        new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Revenue (CHF)',
+                    data: revenueData,
+                    fill: false,
+                    borderColor: '#0d6efd',
+                    backgroundColor: 'rgba(13, 110, 253, 0.2)',
+                    tension: 0.2,
+                    pointRadius: 4,
+                    pointHoverRadius: 6,
+                }],
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const value = context.parsed.y ?? 0;
+                                return `Revenue: CHF ${value.toFixed(2)}`;
+                            }
+                        }
+                    },
+                    legend: {
+                        display: true,
+                    }
+                },
+                scales: {
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'Month',
+                        }
+                    },
+                    y: {
+                        title: {
+                            display: true,
+                            text: 'Revenue (CHF)',
+                        },
+                        ticks: {
+                            callback: function(value) {
+                                return `CHF ${Number(value).toFixed(2)}`;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+</script>
+{% endblock %}

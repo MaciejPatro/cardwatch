@@ -11,7 +11,10 @@
                 </label>
             </div>
         </form>
-        <a class="btn btn-primary mb-3" href="{{ url_for('tracker.item_add') }}">Add Item</a>
+        <div class="d-flex flex-wrap gap-2 mb-3">
+            <a class="btn btn-primary" href="{{ url_for('tracker.item_add') }}">Add Item</a>
+            <a class="btn btn-outline-secondary" href="{{ url_for('tracker.stats_overview') }}">View Statistics</a>
+        </div>
         <table class="table table-bordered table-sm table-hover bg-white align-middle">
             <thead>
             <tr>
