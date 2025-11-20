@@ -16,18 +16,24 @@ def get_fx_rates(base="CHF"):
         if cached and now - cached["ts"] < _CACHE_TTL:
             return dict(cached["rates"])
 
-    try:
+    def _query_rates():
         url = f"https://api.frankfurter.app/latest?from={base}&to=USD,EUR,CHF"
         with urllib.request.urlopen(url, timeout=10) as resp:
             data = json.load(resp)
-        rates = data.get("rates", {})
+        return data.get("rates", {})
+
+    try:
+        rates = _query_rates()
     except Exception:
-        rates = {
-            "CHF": 1.0,
-            "USD": 1.10,
-            "EUR": 0.95,
-            "PLN": 1.0,
-        }
+        try:
+            rates = _query_rates()
+        except Exception:
+            rates = {
+                "CHF": 1.0,
+                "USD": 1.10,
+                "EUR": 0.95,
+                "PLN": 1.0,
+            }
 
     rates[base] = 1.0
     rates.setdefault("PLN", 1.0)
