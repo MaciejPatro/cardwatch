@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="add-form mb-3">
+    <form method="post" action="{{ url_for('add_single') }}" class="card shadow-sm">
+        <div class="card-body">
+            <div class="row g-2 align-items-center">
+                <div class="col-12 col-md-3">
+                    <input name="name" class="form-control" placeholder="Card name" required>
+                </div>
+                <div class="col-12 col-md-4">
+                    <input name="url" class="form-control" placeholder="Cardmarket URL" required>
+                </div>
+                <div class="col-6 col-md-2">
+                    <select name="language" class="form-select" required>
+                        <option value="English">English</option>
+                        <option value="Japanese">Japanese</option>
+                    </select>
+                </div>
+                <div class="col-12 col-md-2">
+                    <input name="image_url" class="form-control" placeholder="Image URL (optional)">
+                </div>
+                <div class="col-4 col-md-1 ms-auto text-end">
+                    <button type="submit" class="btn btn-primary w-100">Add</button>
+                </div>
+            </div>
+        </div>
+    </form>
+</section>
+
+<table id="singleTable" class="table table-striped align-middle" data-toggle="table">
+    <thead class="table-light">
+    <tr>
+        <th data-field="image">Image</th>
+        <th data-field="name" data-sortable="true">Name</th>
+        <th data-field="language" data-sortable="true">Language</th>
+        <th data-field="current" data-sortable="true" data-sorter="priceSorter">Current €</th>
+        <th data-field="from" data-sortable="true" data-sorter="priceSorter">From €</th>
+        <th data-field="trend_value" data-sortable="true" data-sorter="priceSorter">Price trend €</th>
+        <th data-field="avg7" data-sortable="true" data-sorter="priceSorter">7-day avg €</th>
+        <th data-field="avg1" data-sortable="true" data-sorter="priceSorter">1-day avg €</th>
+        <th data-field="pct30" data-sortable="true" data-sorter="priceSorter">30d %</th>
+        <th data-field="pct90" data-sortable="true" data-sorter="priceSorter">90d %</th>
+        <th data-field="pct_all" data-sortable="true" data-sorter="priceSorter">All-time %</th>
+        <th data-field="trend" data-sortable="true">Trend</th>
+        <th data-field="last_update" data-sortable="true" data-sorter="minuteDateSorter">Last update</th>
+    </tr>
+    </thead>
+    <tbody>
+    {% for c in cards %}
+    <tr>
+        <td>
+            {% if c.image_url %}
+            <img src="{{ c.image_url }}" alt="{{ c.name }}" class="card-thumb img-thumbnail">
+            {% else %}
+            —
+            {% endif %}
+        </td>
+        <td>
+            <div class="fw-semibold">{{ c.name }}</div>
+            <a href="{{ c.url }}" target="_blank" rel="noreferrer">Cardmarket</a>
+        </td>
+        <td>{{ c.language }}</td>
+        <td>{{ '€%.2f'|format(c.current_low) if c.current_low is not none else '—' }}</td>
+        <td>{{ '€%.2f'|format(c.from_price) if c.from_price is not none else '—' }}</td>
+        <td>{{ '€%.2f'|format(c.price_trend) if c.price_trend is not none else '—' }}</td>
+        <td>{{ '€%.2f'|format(c.avg7_price) if c.avg7_price is not none else '—' }}</td>
+        <td>{{ '€%.2f'|format(c.avg1_price) if c.avg1_price is not none else '—' }}</td>
+        <td>
+            {% if c.pct30 is not none %}
+            {% set cls = 'text-success' if c.pct30 > 0 else ('text-danger' if c.pct30 < 0 else 'text-muted') %}
+            <span class="{{ cls }}">{{ '%.2f'|format(c.pct30) }}%</span>
+            {% else %}—{% endif %}
+        </td>
+        <td>
+            {% if c.pct90 is not none %}
+            {% set cls = 'text-success' if c.pct90 > 0 else ('text-danger' if c.pct90 < 0 else 'text-muted') %}
+            <span class="{{ cls }}">{{ '%.2f'|format(c.pct90) }}%</span>
+            {% else %}—{% endif %}
+        </td>
+        <td>
+            {% if c.pct_all is not none %}
+            {% set cls = 'text-success' if c.pct_all > 0 else ('text-danger' if c.pct_all < 0 else 'text-muted') %}
+            <span class="{{ cls }}">{{ '%.2f'|format(c.pct_all) }}%</span>
+            {% else %}—{% endif %}
+        </td>
+        <td class="trend {{ c.trend }}">{{ c.trend }}</td>
+        <td>{{ c.last_ts or '—' }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    function priceSorter(a, b) {
+        const toNum = (s) => {
+            if (s == null) return NaN;
+            if (typeof s === 'object') {
+                if ('textContent' in s) {
+                    s = s.textContent;
+                } else if (typeof s.text === 'function') {
+                    s = s.text();
+                } else {
+                    s = String(s);
+                }
+            } else {
+                s = String(s);
+            }
+            s = s.replace(/[\u2212\u2012\u2013\u2014\u2015]/g, '-');
+            s = s.replace(/[^\d,.\-]/g, '').replace(/\s+/g, '');
+            if (s.includes(',') && s.includes('.')) s = s.replace(/\./g, '').replace(',', '.');
+            else if (s.includes(',')) s = s.replace(',', '.');
+            return parseFloat(s);
+        };
+        const x = toNum(a), y = toNum(b);
+        if (isNaN(x) && isNaN(y)) return 0;
+        if (isNaN(x)) return 1;
+        if (isNaN(y)) return -1;
+        return x - y;
+    }
+
+    function minuteDateSorter(a, b) {
+        const toTs = s => {
+            if (!s) return 0;
+            if (typeof s === 'object') {
+                if ('textContent' in s) {
+                    s = s.textContent;
+                } else if (typeof s.text === 'function') {
+                    s = s.text();
+                } else {
+                    s = String(s);
+                }
+            } else {
+                s = String(s);
+            }
+            const t = Date.parse(s.trim().replace(' ', 'T') + ':00');
+            return isNaN(t) ? 0 : t;
+        };
+        return toTs(a) - toTs(b);
+    }
+
+    $(function () {
+        $('#singleTable').bootstrapTable();
+    });
+</script>
+{% endblock %}

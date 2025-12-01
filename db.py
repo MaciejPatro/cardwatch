@@ -1,6 +1,16 @@
 from datetime import datetime, date
-from sqlalchemy import (create_engine, Column, Integer, String, Float, DateTime,
-                        Date, ForeignKey, UniqueConstraint, func)
+from sqlalchemy import (
+    create_engine,
+    Column,
+    Integer,
+    String,
+    Float,
+    DateTime,
+    Date,
+    ForeignKey,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 
 ENGINE = create_engine("sqlite:///cardwatch.db", future=True)
@@ -39,6 +49,52 @@ class Daily(Base):
     __table_args__ = (UniqueConstraint("product_id", "day", name="uniq_daily"),)
 
 
+class SingleCard(Base):
+    __tablename__ = "single_cards"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)
+    url = Column(String, nullable=False, unique=True)
+    language = Column(String, nullable=False)  # English or Japanese
+    condition = Column(String, nullable=False, default="Mint or Near Mint")  # Mint or Near Mint
+    image_url = Column(String, nullable=True)
+    is_enabled = Column(Integer, default=1)
+
+    prices = relationship(
+        "SingleCardPrice", back_populates="card", cascade="all, delete-orphan"
+    )
+
+
+class SingleCardPrice(Base):
+    __tablename__ = "single_card_prices"
+
+    id = Column(Integer, primary_key=True)
+    card_id = Column(Integer, ForeignKey("single_cards.id"), index=True, nullable=False)
+    ts = Column(DateTime, default=datetime.utcnow, index=True)
+
+    low = Column(Float, nullable=True)  # lowest of the scraped 5 (filtered)
+    avg5 = Column(Float, nullable=True)  # average of the scraped 5 (filtered)
+    n_seen = Column(Integer, nullable=True)  # number of rows parsed (<=5)
+    supply = Column(Integer, nullable=True)
+
+    from_price = Column(Float, nullable=True)
+    price_trend = Column(Float, nullable=True)
+    avg7_price = Column(Float, nullable=True)
+    avg1_price = Column(Float, nullable=True)
+
+    card = relationship("SingleCard", back_populates="prices")
+
+
+class SingleCardDaily(Base):
+    __tablename__ = "single_card_daily"
+    id = Column(Integer, primary_key=True)
+    card_id = Column(Integer, ForeignKey("single_cards.id"), index=True, nullable=False)
+    day = Column(Date, default=date.today, index=True)
+    low = Column(Float, nullable=True)
+    avg = Column(Float, nullable=True)
+    __table_args__ = (UniqueConstraint("card_id", "day", name="uniq_single_daily"),)
+
+
 class Item(Base):
     """Inventory items tracked by the old Django app."""
     __tablename__ = "items"
@@ -75,4 +131,26 @@ def upsert_daily(session, product_id:int):
             row.low, row.avg = low, avg
         else:
             session.add(Daily(product_id=product_id, day=today, low=low, avg=avg))
+        session.commit()
+
+
+def upsert_single_daily(session, card_id: int):
+    """Aggregate the most recent day's single-card prices."""
+    today = date.today()
+    agg = (
+        session.query(func.min(SingleCardPrice.low), func.avg(SingleCardPrice.avg5))
+        .filter(SingleCardPrice.card_id == card_id, func.date(SingleCardPrice.ts) == today)
+        .first()
+    )
+    if agg and agg[0] is not None:
+        low, avg = float(agg[0]), float(agg[1]) if agg[1] is not None else None
+        row = (
+            session.query(SingleCardDaily)
+            .filter_by(card_id=card_id, day=today)
+            .one_or_none()
+        )
+        if row:
+            row.low, row.avg = low, avg
+        else:
+            session.add(SingleCardDaily(card_id=card_id, day=today, low=low, avg=avg))
         session.commit()

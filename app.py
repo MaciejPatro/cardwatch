@@ -3,8 +3,23 @@ import os
 import asyncio
 
 from flask import Flask, render_template, request, redirect, url_for, jsonify, flash
-from db import init_db, get_session, Product, Price, Daily
-from scraper import schedule_hourly, compute_trend, is_heads_up, scrape_once
+from db import (
+    init_db,
+    get_session,
+    Product,
+    Price,
+    Daily,
+    SingleCard,
+    SingleCardPrice,
+)
+from scraper import (
+    schedule_hourly,
+    compute_trend,
+    compute_single_trend,
+    is_heads_up,
+    scrape_once,
+    scrape_single_cards,
+)
 from tracker_flask import tracker_bp, init_tracker_scheduler
 from datetime import datetime, timedelta
 
@@ -90,6 +105,72 @@ def index():
     finally:
         s.close()
 
+
+@app.route("/cardwatch/singles")
+@app.route("/cardwatch/singles/")
+def singles():
+    s = get_session()
+    try:
+        cards = s.query(SingleCard).order_by(SingleCard.name).all()
+        now = datetime.utcnow()
+        model = []
+        for c in cards:
+            latest = (
+                s.query(SingleCardPrice)
+                .filter_by(card_id=c.id)
+                .order_by(SingleCardPrice.ts.desc())
+                .first()
+            )
+            first = (
+                s.query(SingleCardPrice)
+                .filter_by(card_id=c.id)
+                .order_by(SingleCardPrice.ts.asc())
+                .first()
+            )
+
+            def get_past(delta):
+                return (
+                    s.query(SingleCardPrice)
+                    .filter(
+                        SingleCardPrice.card_id == c.id,
+                        SingleCardPrice.ts <= now - delta,
+                    )
+                    .order_by(SingleCardPrice.ts.desc())
+                    .first()
+                )
+
+            past30 = get_past(timedelta(days=30))
+            past90 = get_past(timedelta(days=90))
+
+            def pct(cur, prev):
+                if cur is None or prev is None or prev == 0:
+                    return None
+                return (cur - prev) / prev * 100.0
+
+            current_low = latest.low if latest else None
+            model.append(
+                {
+                    "id": c.id,
+                    "name": c.name,
+                    "url": c.url,
+                    "language": c.language,
+                    "image_url": c.image_url,
+                    "trend": compute_single_trend(s, c.id),
+                    "from_price": latest.from_price if latest else None,
+                    "price_trend": latest.price_trend if latest else None,
+                    "avg7_price": latest.avg7_price if latest else None,
+                    "avg1_price": latest.avg1_price if latest else None,
+                    "current_low": current_low,
+                    "pct30": pct(current_low, past30.low if past30 else None),
+                    "pct90": pct(current_low, past90.low if past90 else None),
+                    "pct_all": pct(current_low, first.low if first else None),
+                    "last_ts": latest.ts.strftime("%Y-%m-%d %H:%M") if latest else None,
+                }
+            )
+        return render_template("singles.html", cards=model)
+    finally:
+        s.close()
+
 @app.route("/cardwatch/product/<int:pid>")
 def product(pid):
     s = get_session()
@@ -147,6 +228,49 @@ def add():
         except Exception as e:
             print(f"[app] Error scraping new product {pid}: {e}")
     return redirect(url_for("index"))
+
+
+@app.route("/cardwatch/singles/add", methods=["POST"])
+def add_single():
+    name = request.form.get("name", "").strip()
+    url = request.form.get("url", "").strip()
+    language = request.form.get("language", "").strip()
+    image_url = request.form.get("image_url", "").strip() or None
+
+    if not (name and url and language):
+        flash("Please provide name, url, and language.")
+        return redirect(url_for("singles"))
+
+    if language not in ("English", "Japanese"):
+        flash("Language must be English or Japanese.")
+        return redirect(url_for("singles"))
+
+    s = get_session()
+    cid = None
+    try:
+        card = SingleCard(
+            name=name,
+            url=url,
+            language=language,
+            condition="Mint or Near Mint",
+            image_url=image_url,
+        )
+        s.add(card)
+        s.commit()
+        cid = card.id
+        flash("Single card added.")
+    except Exception as e:
+        s.rollback()
+        flash(f"Error: {e}")
+    finally:
+        s.close()
+
+    if cid:
+        try:
+            asyncio.run(scrape_single_cards([cid]))
+        except Exception as e:
+            print(f"[app] Error scraping new single card {cid}: {e}")
+    return redirect(url_for("singles"))
 
 @app.route("/cardwatch/edit/<int:pid>", methods=["GET", "POST"])
 def edit(pid):

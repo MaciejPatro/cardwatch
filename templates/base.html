@@ -44,6 +44,11 @@
                 <li class="nav-item">
                     <a class="nav-link" href="{{ url_for('index') }}">CardWatch</a>
                 </li>
+                {% if has_endpoint('singles') %}
+                <li class="nav-item">
+                    <a class="nav-link" href="{{ url_for('singles') }}">Singles</a>
+                </li>
+                {% endif %}
                 <li class="nav-item">
                     <a class="nav-link" href="{{ url_for('tracker.item_list') }}">Tracker</a>
                 </li>

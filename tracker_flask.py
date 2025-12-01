@@ -29,6 +29,19 @@ from apscheduler.schedulers.background import BackgroundScheduler
 
 tracker_bp = Blueprint('tracker', __name__, url_prefix='/tracker')
 
+
+@tracker_bp.app_context_processor
+def inject_has_endpoint():
+    from flask import current_app
+
+    def has_endpoint(name: str):
+        try:
+            return name in current_app.view_functions
+        except Exception:
+            return False
+
+    return {"has_endpoint": has_endpoint}
+
 MEDIA_ROOT = os.path.join(os.path.dirname(__file__), 'media')
 UPLOAD_FOLDER = os.path.join(MEDIA_ROOT, 'item_images')
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
