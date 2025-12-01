@@ -72,13 +72,22 @@ CURRENCIES = [
     ("PLN", "Polish Zloty"),
 ]
 
-def save_uploaded_image(image):
+def save_uploaded_image(image, upload_folder=None):
     """Save an uploaded image with a unique filename."""
+    upload_folder = upload_folder or UPLOAD_FOLDER
+    media_root = os.path.abspath(MEDIA_ROOT)
+    target_folder = os.path.abspath(upload_folder)
+
+    if os.path.commonpath([media_root, target_folder]) != media_root:
+        raise ValueError("Upload folder must be inside MEDIA_ROOT")
+
+    os.makedirs(target_folder, exist_ok=True)
+
     filename = secure_filename(image.filename)
     unique_filename = f"{uuid.uuid4().hex}_{filename}"
-    os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-    relative_path = os.path.join('item_images', unique_filename)
-    image.save(os.path.join(MEDIA_ROOT, relative_path))
+    relative_dir = os.path.relpath(target_folder, media_root)
+    relative_path = os.path.join(relative_dir, unique_filename)
+    image.save(os.path.join(target_folder, unique_filename))
     return relative_path
 
 def to_dec(val):
