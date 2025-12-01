@@ -1,6 +1,6 @@
 # scraper.py
 import asyncio, re, time
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from bs4 import BeautifulSoup
@@ -189,11 +189,28 @@ async def scrape_once(product_ids=None):
         if product_ids:
             q = q.filter(Product.id.in_(product_ids))
         products = q.all()
+
+        if not products:
+            print("[scraper] No enabled products found. Nothing to scrape.")
+            return
+
+        # Avoid hitting the website twice for the same product within the
+        # configured window. We look up the latest scrape timestamp in bulk
+        # so we only need one query for all products.
+        cutoff = datetime.utcnow() - timedelta(minutes=45)
+        latest_rows = (
+            session.query(Price.product_id, func.max(Price.ts))
+            .filter(Price.product_id.in_([p.id for p in products]))
+            .group_by(Price.product_id)
+            .all()
+        )
+        last_seen = {pid: ts for pid, ts in latest_rows if ts is not None}
+        products = [p for p in products if last_seen.get(p.id, cutoff - timedelta(seconds=1)) < cutoff]
     finally:
         session.close()
 
     if not products:
-        print("[scraper] No enabled products found. Nothing to scrape.")
+        print("[scraper] Skipping sealed scrape: all products fetched recently")
         return
 
     async with async_playwright() as p:
@@ -246,11 +263,25 @@ async def scrape_single_cards(card_ids=None):
         if card_ids:
             q = q.filter(SingleCard.id.in_(card_ids))
         cards = q.all()
+
+        if not cards:
+            print("[scraper] No enabled single cards found. Nothing to scrape.")
+            return
+
+        cutoff = datetime.utcnow() - timedelta(minutes=45)
+        latest_rows = (
+            session.query(SingleCardPrice.card_id, func.max(SingleCardPrice.ts))
+            .filter(SingleCardPrice.card_id.in_([c.id for c in cards]))
+            .group_by(SingleCardPrice.card_id)
+            .all()
+        )
+        last_seen = {cid: ts for cid, ts in latest_rows if ts is not None}
+        cards = [c for c in cards if last_seen.get(c.id, cutoff - timedelta(seconds=1)) < cutoff]
     finally:
         session.close()
 
     if not cards:
-        print("[scraper] No enabled single cards found. Nothing to scrape.")
+        print("[scraper] Skipping single-card scrape: all cards fetched recently")
         return
 
     async with async_playwright() as p:

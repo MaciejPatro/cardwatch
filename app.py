@@ -11,6 +11,7 @@ from db import (
     Daily,
     SingleCard,
     SingleCardPrice,
+    SingleCardOffer,
 )
 from scraper import (
     schedule_hourly,
@@ -168,6 +169,78 @@ def singles():
                 }
             )
         return render_template("singles.html", cards=model)
+    finally:
+        s.close()
+
+
+@app.route("/cardwatch/seller-bundles")
+@app.route("/cardwatch/seller-bundles/")
+def seller_bundles():
+    s = get_session()
+    try:
+        offers = (
+            s.query(SingleCardOffer)
+            .join(SingleCard)
+            .filter(SingleCard.is_enabled == 1)
+            .all()
+        )
+
+        if not offers:
+            return render_template("seller_bundles.html", sellers=[])
+
+        cards = s.query(SingleCard).filter(SingleCard.is_enabled == 1).all()
+        card_lookup = {c.id: c for c in cards}
+
+        cheapest = {}
+        for offer in offers:
+            if offer.price is None:
+                continue
+            prev = cheapest.get(offer.card_id)
+            if prev is None or offer.price < prev:
+                cheapest[offer.card_id] = offer.price
+
+        seller_map = {}
+        for offer in offers:
+            baseline = cheapest.get(offer.card_id)
+            if baseline is None or offer.price is None:
+                continue
+            if offer.price > baseline * 1.2:
+                continue
+
+            key = (offer.seller_name, offer.country)
+            entry = seller_map.setdefault(
+                key,
+                {
+                    "seller": offer.seller_name,
+                    "country": offer.country,
+                    "cards": [],
+                    "total_upcharge": 0.0,
+                    "bundle_total": 0.0,
+                    "cheapest_total": 0.0,
+                },
+            )
+
+            upcharge = offer.price - baseline
+            entry["cards"].append(
+                {
+                    "card": card_lookup.get(offer.card_id),
+                    "price": offer.price,
+                    "baseline": baseline,
+                    "upcharge": upcharge,
+                }
+            )
+            entry["total_upcharge"] += upcharge
+            entry["bundle_total"] += offer.price
+            entry["cheapest_total"] += baseline
+
+        sellers = [
+            s for s in seller_map.values() if s["total_upcharge"] <= 20.0
+        ]
+        sellers.sort(
+            key=lambda s: (-len(s["cards"]), s["total_upcharge"], s["bundle_total"])
+        )
+
+        return render_template("seller_bundles.html", sellers=sellers)
     finally:
         s.close()
 

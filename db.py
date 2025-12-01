@@ -64,6 +64,10 @@ class SingleCard(Base):
         "SingleCardPrice", back_populates="card", cascade="all, delete-orphan"
     )
 
+    offers = relationship(
+        "SingleCardOffer", back_populates="card", cascade="all, delete-orphan"
+    )
+
 
 class SingleCardPrice(Base):
     __tablename__ = "single_card_prices"
@@ -83,6 +87,19 @@ class SingleCardPrice(Base):
     avg1_price = Column(Float, nullable=True)
 
     card = relationship("SingleCard", back_populates="prices")
+
+
+class SingleCardOffer(Base):
+    __tablename__ = "single_card_offers"
+
+    id = Column(Integer, primary_key=True)
+    card_id = Column(Integer, ForeignKey("single_cards.id"), index=True, nullable=False)
+    seller_name = Column(String, nullable=False)
+    country = Column(String, nullable=True)
+    price = Column(Float, nullable=False)
+    ts = Column(DateTime, default=datetime.utcnow, index=True)
+
+    card = relationship("SingleCard", back_populates="offers")
 
 
 class SingleCardDaily(Base):
