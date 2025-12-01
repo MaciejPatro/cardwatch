@@ -91,13 +91,17 @@ def parse_prices_for_country(html: str, country_name: str):
 
 
 def parse_single_card_prices(html: str, language: str):
-    """Return up to 5 lowest euro prices matching language, limiting to Mint/Near Mint."""
+    """Return up to 5 lowest euro prices matching language, limiting to Mint/Near Mint.
+
+    Cardmarket regularly tweaks its table wrappers; when the wrapper classes change the
+    parser should still locate ``div.article-row`` entries anywhere in the document so
+    we keep populating both low and avg series.
+    """
     soup = BeautifulSoup(html, "lxml")
     table = soup.select_one("div.table.article-table.table-striped")
-    if not table:
+    rows = table.select("div.article-row") if table else soup.select("div.article-row")
+    if not rows:
         return []
-
-    rows = table.select("div.article-row")
     prices = []
     lang_norm = language.strip().lower()
     for r in rows:
@@ -304,7 +308,9 @@ async def scrape_single_cards(card_ids=None):
                 supply = parse_supply(html)
 
                 if prices or any(v is not None for v in summary.values()):
-                    low = min(prices) if prices else summary.get("from_price")
+                    # Always derive chart points from the scraped listings so the
+                    # low/avg lines match the table rows shown on the website.
+                    low = min(prices) if prices else None
                     avg = sum(prices) / len(prices) if prices else None
                     s = get_session()
                     try:
