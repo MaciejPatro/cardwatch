@@ -21,11 +21,15 @@ from scraper import (
     scrape_once,
     scrape_single_cards,
 )
-from tracker_flask import tracker_bp, init_tracker_scheduler
+import tracker_flask
+from tracker_flask import tracker_bp, init_tracker_scheduler, save_uploaded_image
 from datetime import datetime, timedelta
 
 app = Flask(__name__)
 app.secret_key = "change-me"
+
+SINGLE_CARD_UPLOAD_FOLDER = os.path.join(tracker_flask.MEDIA_ROOT, "single_card_images")
+os.makedirs(SINGLE_CARD_UPLOAD_FOLDER, exist_ok=True)
 
 init_db()
 if not os.environ.get("CARDWATCH_DISABLE_SCHEDULER") and (
@@ -308,7 +312,7 @@ def add_single():
     name = request.form.get("name", "").strip()
     url = request.form.get("url", "").strip()
     language = request.form.get("language", "").strip()
-    image_url = request.form.get("image_url", "").strip() or None
+    image_file = request.files.get("image")
 
     if not (name and url and language):
         flash("Please provide name, url, and language.")
@@ -317,6 +321,16 @@ def add_single():
     if language not in ("English", "Japanese"):
         flash("Language must be English or Japanese.")
         return redirect(url_for("singles"))
+
+    image_url = None
+    if image_file and image_file.filename:
+        try:
+            image_url = save_uploaded_image(
+                image_file, upload_folder=SINGLE_CARD_UPLOAD_FOLDER
+            )
+        except ValueError as exc:
+            flash(str(exc))
+            return redirect(url_for("singles"))
 
     s = get_session()
     cid = None

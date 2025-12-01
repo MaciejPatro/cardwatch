@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 <section class="add-form mb-3">
-    <form method="post" action="{{ url_for('add_single') }}" class="card shadow-sm">
+    <form method="post" action="{{ url_for('add_single') }}" enctype="multipart/form-data" class="card shadow-sm">
         <div class="card-body">
             <div class="row g-2 align-items-center">
                 <div class="col-12 col-md-3">
@@ -17,7 +17,7 @@
                     </select>
                 </div>
                 <div class="col-12 col-md-2">
-                    <input name="image_url" class="form-control" placeholder="Image URL (optional)">
+                    <input type="file" name="image" class="form-control" aria-label="Image upload (optional)">
                 </div>
                 <div class="col-4 col-md-1 ms-auto text-end">
                     <button type="submit" class="btn btn-primary w-100">Add</button>
@@ -50,9 +50,11 @@
     <tr>
         <td>
             {% if c.image_url %}
-            <img src="{{ c.image_url }}" alt="{{ c.name }}" class="card-thumb img-thumbnail">
+                {% set is_link = c.image_url.startswith('http') %}
+                {% set src = c.image_url if is_link else url_for('tracker.media', filename=c.image_url) %}
+                <img src="{{ src }}" alt="{{ c.name }}" class="card-thumb img-thumbnail">
             {% else %}
-            —
+                —
             {% endif %}
         </td>
         <td>
