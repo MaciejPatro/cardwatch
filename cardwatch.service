@@ -3,9 +3,9 @@ Description=CardWatch test app
 After=network.target
 
 [Service]
-User=patro_m
-WorkingDirectory=/home/patro_m/projects/cardwatch
-ExecStart=/home/patro_m/projects/cardwatch/.venv/bin/python app.py
+User=mpatro
+WorkingDirectory=/home/mpatro/projects/cardwatch
+ExecStart=/home/mpatro/projects/cardwatch/.venv/bin/python app.py
 Restart=always
 Environment=PYTHONUNBUFFERED=1
 
