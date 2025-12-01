@@ -11,3 +11,4 @@ table.list th, table.list td { padding: 8px; border-bottom: 1px solid #eee; }
 .add-form input { margin-right:8px; }
 .linklike { background:none; border:none; color:#06c; cursor:pointer; }
 .flash { color:#b30404; }
+.card-thumb { width: 64px; height: 64px; object-fit: contain; }

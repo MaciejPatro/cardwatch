@@ -3,6 +3,9 @@
 <div class="text-center">
     <h1>Select an application</h1>
     <a class="btn btn-primary m-2" href="{{ url_for('index') }}">CardWatch</a>
+    {% if has_endpoint('singles') %}
+    <a class="btn btn-success m-2" href="{{ url_for('singles') }}">Singles</a>
+    {% endif %}
     <a class="btn btn-secondary m-2" href="/tracker/">Tracker</a>
 </div>
 {% endblock %}
