@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex align-items-center mb-3">
+    <div>
+        <h1 class="h3 mb-1">Seller bundles</h1>
+        <p class="text-muted mb-0">Shows sellers that cover multiple wanted singles within 20% of the lowest price for each card.</p>
+    </div>
+</div>
+
+{% if not sellers %}
+<div class="alert alert-info">No seller offers are available yet. Add some single-card offers to see bundle opportunities.</div>
+{% else %}
+<div class="table-responsive">
+    <table class="table table-striped align-middle" id="sellerBundleTable" data-toggle="table">
+        <thead class="table-light">
+            <tr>
+                <th data-field="seller" data-sortable="true">Seller</th>
+                <th data-field="country" data-sortable="true">Country</th>
+                <th data-field="count" data-sortable="true"># wanted cards</th>
+                <th data-field="bundle" data-sortable="true" data-sorter="priceSorter">Bundle total €</th>
+                <th data-field="baseline" data-sortable="true" data-sorter="priceSorter">Cheapest total €</th>
+                <th data-field="upcharge" data-sortable="true" data-sorter="priceSorter">Upcharge €</th>
+                <th data-field="cards">Cards</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for seller in sellers %}
+            <tr>
+                <td class="fw-semibold">{{ seller.seller }}</td>
+                <td>{{ seller.country or '—' }}</td>
+                <td>{{ seller.cards|length }}</td>
+                <td>{{ '€%.2f'|format(seller.bundle_total) }}</td>
+                <td>{{ '€%.2f'|format(seller.cheapest_total) }}</td>
+                <td class="{{ 'text-success' if seller.total_upcharge <= 0 else '' }}">
+                    {{ '€%.2f'|format(seller.total_upcharge) }}
+                </td>
+                <td>
+                    <ul class="mb-0 ps-3 small">
+                        {% for entry in seller.cards %}
+                        <li>
+                            {{ entry.card.name if entry.card else 'Unknown card' }}:
+                            {{ '€%.2f'|format(entry.price) }} (lowest {{ '€%.2f'|format(entry.baseline) }}, upcharge {{ '€%.2f'|format(entry.upcharge) }})
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    function priceSorter(a, b) {
+        const toNum = (s) => {
+            if (s == null) return NaN;
+            if (typeof s === 'object') {
+                if ('textContent' in s) {
+                    s = s.textContent;
+                } else if (typeof s.text === 'function') {
+                    s = s.text();
+                } else {
+                    s = String(s);
+                }
+            } else {
+                s = String(s);
+            }
+            s = s.replace(/[\u2212\u2012\u2013\u2014\u2015]/g, '-');
+            s = s.replace(/[^\d,.\-]/g, '').replace(/\s+/g, '');
+            if (s.includes(',') && s.includes('.')) s = s.replace(/\./g, '').replace(',', '.');
+            else if (s.includes(',')) s = s.replace(',', '.');
+            return parseFloat(s);
+        };
+        const x = toNum(a), y = toNum(b);
+        if (isNaN(x) && isNaN(y)) return 0;
+        if (isNaN(x)) return 1;
+        if (isNaN(y)) return -1;
+        return x - y;
+    }
+
+    $(function () {
+        $('#sellerBundleTable').bootstrapTable();
+    });
+</script>
+{% endblock %}
