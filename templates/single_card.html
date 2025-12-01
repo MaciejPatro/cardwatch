@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex align-items-center mb-3">
+    {% if card.image_url %}
+        {% set is_link = card.image_url.startswith('http') %}
+        {% set src = card.image_url if is_link else url_for('tracker.media', filename=card.image_url) %}
+        <img src="{{ src }}" alt="{{ card.name }}" class="me-3" style="width:80px;height:80px;object-fit:cover;"/>
+    {% endif %}
+    <div>
+        <h2 class="mb-1">{{ card.name }}</h2>
+        <p class="mb-1">Language: {{ card.language }} • Condition: {{ card.condition }}</p>
+        <p class="mb-0">
+            <a href="{{ card.url }}" target="_blank" rel="noopener">Open listing</a>
+            {% if latest %}
+            • Latest snapshot: {{ latest.ts.strftime('%Y-%m-%d %H:%M') }}
+            {% endif %}
+        </p>
+    </div>
+</div>
+<div class="mb-3">
+    <a href="{{ url_for('singles') }}" class="btn btn-sm btn-outline-secondary">Back</a>
+</div>
+
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        <h5 class="card-title">Daily price history</h5>
+        <p class="text-muted small">Tracks the stored daily aggregation over the full history.</p>
+        <canvas id="dailyChart"></canvas>
+    </div>
+</div>
+
+<div class="card shadow-sm">
+    <div class="card-body">
+        <h5 class="card-title">Collected price snapshots</h5>
+        <p class="text-muted small">Each run records the lowest current price and the average of up to 5 items.</p>
+        <canvas id="seriesChart"></canvas>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+async function drawCharts() {
+    const dailyResp = await fetch("{{ url_for('api_single_daily', cid=card.id) }}");
+    const daily = await dailyResp.json();
+    const seriesResp = await fetch("{{ url_for('api_single_series', cid=card.id) }}");
+    const series = await seriesResp.json();
+
+    const dailyCtx = document.getElementById('dailyChart');
+    new Chart(dailyCtx, {
+        type: 'line',
+        data: {
+            labels: daily.map(p => p.d),
+            datasets: [
+                { label: 'Lowest daily price', data: daily.map(p => p.low), borderColor: '#0d6efd', tension: 0.2 },
+                { label: 'Average daily price', data: daily.map(p => p.avg), borderColor: '#198754', tension: 0.2 }
+            ]
+        }
+    });
+
+    const seriesCtx = document.getElementById('seriesChart');
+    new Chart(seriesCtx, {
+        type: 'line',
+        data: {
+            labels: series.map(p => p.t),
+            datasets: [
+                { label: 'Lowest current price', data: series.map(p => p.low), borderColor: '#0d6efd', tension: 0.2 },
+                { label: 'Average of up to 5 items', data: series.map(p => p.avg5), borderColor: '#dc3545', tension: 0.2 }
+            ]
+        }
+    });
+}
+
+drawCharts();
+</script>
+{% endblock %}

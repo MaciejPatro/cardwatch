@@ -47,7 +47,7 @@
     </thead>
     <tbody>
     {% for c in cards %}
-    <tr>
+    <tr data-href="{{ url_for('single_card', cid=c.id) }}">
         <td>
             {% if c.image_url %}
                 {% set is_link = c.image_url.startswith('http') %}
@@ -144,6 +144,11 @@
 
     $(function () {
         $('#singleTable').bootstrapTable();
+        $('#singleTable tbody').on('click', 'tr', function (e) {
+            if ($(e.target).closest('a, button').length) return;
+            const href = $(this).data('href');
+            if (href) window.location = href;
+        });
     });
 </script>
 {% endblock %}

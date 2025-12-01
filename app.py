@@ -12,6 +12,7 @@ from db import (
     SingleCard,
     SingleCardPrice,
     SingleCardOffer,
+    SingleCardDaily,
 )
 from scraper import (
     schedule_hourly,
@@ -177,6 +178,24 @@ def singles():
         s.close()
 
 
+@app.route("/cardwatch/single/<int:cid>")
+def single_card(cid):
+    s = get_session()
+    try:
+        card = s.get(SingleCard, cid)
+        if not card:
+            return "Not found", 404
+        latest = (
+            s.query(SingleCardPrice)
+            .filter_by(card_id=card.id)
+            .order_by(SingleCardPrice.ts.desc())
+            .first()
+        )
+        return render_template("single_card.html", card=card, latest=latest)
+    finally:
+        s.close()
+
+
 @app.route("/cardwatch/seller-bundles")
 @app.route("/cardwatch/seller-bundles/")
 def seller_bundles():
@@ -275,6 +294,46 @@ def api_daily(pid):
     try:
         points = s.query(Daily).filter_by(product_id=pid).order_by(Daily.day).all()
         return jsonify([{"d": d.day.isoformat(), "low": d.low, "avg": d.avg} for d in points])
+    finally:
+        s.close()
+
+
+@app.route("/cardwatch/api/single/<int:cid>/series")
+def api_single_series(cid):
+    s = get_session()
+    try:
+        points = (
+            s.query(SingleCardPrice)
+            .filter_by(card_id=cid)
+            .order_by(SingleCardPrice.ts)
+            .all()
+        )
+        return jsonify(
+            [
+                {"t": pr.ts.isoformat(), "low": pr.low, "avg5": pr.avg5}
+                for pr in points
+            ]
+        )
+    finally:
+        s.close()
+
+
+@app.route("/cardwatch/api/single/<int:cid>/daily")
+def api_single_daily(cid):
+    s = get_session()
+    try:
+        points = (
+            s.query(SingleCardDaily)
+            .filter_by(card_id=cid)
+            .order_by(SingleCardDaily.day)
+            .all()
+        )
+        return jsonify(
+            [
+                {"d": d.day.isoformat(), "low": d.low, "avg": d.avg}
+                for d in points
+            ]
+        )
     finally:
         s.close()
 
