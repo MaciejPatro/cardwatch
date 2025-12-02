@@ -6,7 +6,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from bs4 import BeautifulSoup
 from playwright.async_api import async_playwright
 from db import (
-    get_session,
+    get_db_session,
     Product,
     Price,
     SingleCard,
@@ -15,6 +15,9 @@ from db import (
     upsert_single_daily,
 )
 from sqlalchemy import func
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 PRICE_RE = re.compile(r"([\d.,]+)\s*€")
@@ -187,15 +190,14 @@ async def scrape_once(product_ids=None):
     from db import get_session, Product, Price
     print(f"[scraper] Starting scrape run at {datetime.utcnow():%Y-%m-%d %H:%M:%S}")
 
-    session = get_session()
-    try:
+    with get_db_session() as session:
         q = session.query(Product).filter_by(is_enabled=1)
         if product_ids:
             q = q.filter(Product.id.in_(product_ids))
         products = q.all()
 
         if not products:
-            print("[scraper] No enabled products found. Nothing to scrape.")
+            logger.info("No enabled products found. Nothing to scrape.")
             return
 
         # Avoid hitting the website twice for the same product within the
@@ -210,11 +212,9 @@ async def scrape_once(product_ids=None):
         )
         last_seen = {pid: ts for pid, ts in latest_rows if ts is not None}
         products = [p for p in products if last_seen.get(p.id, cutoff - timedelta(seconds=1)) < cutoff]
-    finally:
-        session.close()
 
     if not products:
-        print("[scraper] Skipping sealed scrape: all products fetched recently")
+        logger.info("Skipping sealed scrape: all products fetched recently")
         return
 
     async with async_playwright() as p:
@@ -224,7 +224,7 @@ async def scrape_once(product_ids=None):
             "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
         ))
         for prod in products:
-            print(f"[scraper] Fetching prices for {prod.name} ({prod.country})")
+            logger.info(f"Fetching prices for {prod.name} ({prod.country})")
             start = time.time()
             try:
                 html = await fetch_page(context, prod.url)
@@ -233,20 +233,17 @@ async def scrape_once(product_ids=None):
                 if prices:
                     low = min(prices)
                     avg = sum(prices) / len(prices)
-                    s = get_session()
-                    try:
+                    with get_db_session() as s:
                         s.add(Price(product_id=prod.id, low=low, avg5=avg,
                                     n_seen=len(prices), supply=supply))
                         s.commit()
                         upsert_daily(s, prod.id)
-                    finally:
-                        s.close()
-                    print(f"[scraper] Stored {len(prices)} prices: low={low:.2f}, avg5={avg:.2f}, supply={supply}")
+                    logger.info(f"Stored {len(prices)} prices: low={low:.2f}, avg5={avg:.2f}, supply={supply}")
                 else:
-                    print("[scraper] No prices found")
+                    logger.warning("No prices found")
                 # 15s delay between websites
             except Exception as e:
-                print(f"[scraper] Error while processing {prod.name}: {e}")
+                logger.error(f"Error while processing {prod.name}: {e}")
             finally:
                 elapsed = time.time() - start
                 remain = max(0, 15.0 - elapsed)
@@ -254,22 +251,21 @@ async def scrape_once(product_ids=None):
 
         await context.close()
         await browser.close()
-    print(f"[scraper] Scrape run finished at {datetime.utcnow():%Y-%m-%d %H:%M:%S}")
+    logger.info(f"Scrape run finished at {datetime.utcnow():%Y-%m-%d %H:%M:%S}")
 
 
 async def scrape_single_cards(card_ids=None):
     """Scrape single-card prices and headline stats."""
-    print(f"[scraper] Starting single-card scrape at {datetime.utcnow():%Y-%m-%d %H:%M:%S}")
+    logger.info(f"Starting single-card scrape at {datetime.utcnow():%Y-%m-%d %H:%M:%S}")
 
-    session = get_session()
-    try:
+    with get_db_session() as session:
         q = session.query(SingleCard).filter_by(is_enabled=1)
         if card_ids:
             q = q.filter(SingleCard.id.in_(card_ids))
         cards = q.all()
 
         if not cards:
-            print("[scraper] No enabled single cards found. Nothing to scrape.")
+            logger.info("No enabled single cards found. Nothing to scrape.")
             return
 
         cutoff = datetime.utcnow() - timedelta(minutes=45)
@@ -281,11 +277,9 @@ async def scrape_single_cards(card_ids=None):
         )
         last_seen = {cid: ts for cid, ts in latest_rows if ts is not None}
         cards = [c for c in cards if last_seen.get(c.id, cutoff - timedelta(seconds=1)) < cutoff]
-    finally:
-        session.close()
 
     if not cards:
-        print("[scraper] Skipping single-card scrape: all cards fetched recently")
+        logger.info("Skipping single-card scrape: all cards fetched recently")
         return
 
     async with async_playwright() as p:
@@ -297,8 +291,8 @@ async def scrape_single_cards(card_ids=None):
             )
         )
         for card in cards:
-            print(
-                f"[scraper] Fetching single card {card.name} ({card.language}, {card.condition})"
+            logger.info(
+                f"Fetching single card {card.name} ({card.language}, {card.condition})"
             )
             start = time.time()
             try:
@@ -312,8 +306,9 @@ async def scrape_single_cards(card_ids=None):
                     # low/avg lines match the table rows shown on the website.
                     low = min(prices) if prices else None
                     avg = sum(prices) / len(prices) if prices else None
-                    s = get_session()
-                    try:
+                    low = min(prices) if prices else None
+                    avg = sum(prices) / len(prices) if prices else None
+                    with get_db_session() as s:
                         s.add(
                             SingleCardPrice(
                                 card_id=card.id,
@@ -329,15 +324,13 @@ async def scrape_single_cards(card_ids=None):
                         )
                         s.commit()
                         upsert_single_daily(s, card.id)
-                    finally:
-                        s.close()
-                    print(
-                        f"[scraper] Stored single card stats (low={low}, avg5={avg}, supply={supply})"
+                    logger.info(
+                        f"Stored single card stats (low={low}, avg5={avg}, supply={supply})"
                     )
                 else:
-                    print("[scraper] No prices found for single card")
+                    logger.warning("No prices found for single card")
             except Exception as e:
-                print(f"[scraper] Error while processing {card.name}: {e}")
+                logger.error(f"Error while processing {card.name}: {e}")
             finally:
                 elapsed = time.time() - start
                 remain = max(0, 15.0 - elapsed)
@@ -345,8 +338,9 @@ async def scrape_single_cards(card_ids=None):
 
         await context.close()
         await browser.close()
-    print(
-        f"[scraper] Single-card scrape finished at {datetime.utcnow():%Y-%m-%d %H:%M:%S}"
+
+    logger.info(
+        f"Single-card scrape finished at {datetime.utcnow():%Y-%m-%d %H:%M:%S}"
     )
 
 
@@ -432,7 +426,7 @@ def is_heads_up(session, product_id: int):
 
 # Hourly schedule (at most once/hour)
 def schedule_hourly():
-    print("[scraper] Starting hourly scheduler")
+    logger.info("Starting hourly scheduler")
     sched = BackgroundScheduler(timezone="UTC")
     # run once ASAP after start, then every hour
     sched.add_job(

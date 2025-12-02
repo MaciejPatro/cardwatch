@@ -1,4 +1,6 @@
 from datetime import datetime, date
+from contextlib import contextmanager
+from typing import Generator, Optional, Any
 from sqlalchemy import (
     create_engine,
     Column,
@@ -13,7 +15,9 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 
-ENGINE = create_engine("sqlite:///cardwatch.db", future=True)
+from config import Config
+
+ENGINE = create_engine(Config.SQLALCHEMY_DATABASE_URI, future=True)
 SessionLocal = sessionmaker(bind=ENGINE, expire_on_commit=False, future=True)
 Base = declarative_base()
 
@@ -131,7 +135,25 @@ class Item(Base):
 def init_db():
     Base.metadata.create_all(ENGINE)
 
+from contextlib import contextmanager
+from typing import Generator, Optional
+
+# ... (keep existing imports)
+
+@contextmanager
+def get_db_session() -> Generator:
+    """Provide a transactional scope around a series of operations."""
+    session = SessionLocal()
+    try:
+        yield session
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
 def get_session():
+    """Deprecated: Use get_db_session context manager instead."""
     return SessionLocal()
 
 def upsert_daily(session, product_id:int):

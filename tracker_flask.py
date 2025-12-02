@@ -17,7 +17,7 @@ from flask import (
 )
 from werkzeug.utils import secure_filename
 
-from db import get_session, Item
+from db import get_db_session, Item
 from tracker_utils.pricecharting import fetch_pricecharting_prices
 from tracker_utils.utils import (
     get_reference_usd,
@@ -42,7 +42,9 @@ def inject_has_endpoint():
 
     return {"has_endpoint": has_endpoint}
 
-MEDIA_ROOT = os.path.join(os.path.dirname(__file__), 'media')
+from config import Config
+
+MEDIA_ROOT = Config.MEDIA_ROOT
 UPLOAD_FOLDER = os.path.join(MEDIA_ROOT, 'item_images')
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
@@ -105,16 +107,15 @@ def _update_cache(items):
 
 
 def refresh_pricecharting_cache():
-    session = get_session()
-    try:
+    global PRICECHARTING_CACHE_TS
+    with get_db_session() as session:
         # Load all items so that entries without a link also get a cache slot.
         # This avoids the tracker appearing empty for items that don't have
         # an associated PriceCharting link. Those items simply get default
         # price information instead of being skipped entirely.
         items = session.query(Item).all()
-    finally:
-        session.close()
-    _update_cache(items)
+        _update_cache(items)
+    PRICECHARTING_CACHE_TS = datetime.utcnow()
 
 
 def schedule_pricecharting_refresh():
@@ -125,7 +126,7 @@ def schedule_pricecharting_refresh():
 
 
 def init_tracker_scheduler():
-    if os.environ.get("CARDWATCH_DISABLE_SCHEDULER"):
+    if Config.CARDWATCH_DISABLE_SCHEDULER:
         return None
     if os.environ.get("WERKZEUG_RUN_MAIN") != "true" and os.environ.get("FLASK_DEBUG"):
         return None
@@ -343,8 +344,7 @@ def api_cache_ts():
 
 @tracker_bp.route('/')
 def item_list():
-    session = get_session()
-    try:
+    with get_db_session() as session:
         hide_not_for_sale = request.args.get('hide_not_for_sale') == '1'
 
         items = session.query(Item).order_by(Item.buy_date.desc()).all()
@@ -397,14 +397,11 @@ def item_list():
             not_for_sale_total_chf=not_for_sale_total_chf,
             hide_not_for_sale=hide_not_for_sale,
         )
-    finally:
-        session.close()
 
 
 @tracker_bp.route('/stats')
 def stats_overview():
-    session = get_session()
-    try:
+    with get_db_session() as session:
         items = session.query(Item).order_by(Item.buy_date.asc()).all()
         monthly_stats = calculate_monthly_tracker_stats(items)
         sale_time_stats = calculate_sale_time_stats(items)
@@ -419,8 +416,6 @@ def stats_overview():
             'Review active listings that have been live the longest to consider repricing or promotions.',
             'Compare the capital tied up in not-for-sale items against realized revenue to guide future purchases.',
         ]
-    finally:
-        session.close()
 
     return render_template(
         'tracker/stats_overview.html',
@@ -433,12 +428,9 @@ def stats_overview():
 
 @tracker_bp.route('/stats/revenue-trend')
 def revenue_trend():
-    session = get_session()
-    try:
+    with get_db_session() as session:
         items = session.query(Item).order_by(Item.buy_date.asc()).all()
         monthly_stats = calculate_monthly_tracker_stats(items)
-    finally:
-        session.close()
 
     chart_labels = [entry['label'] for entry in monthly_stats]
     chart_revenue = [float(entry['revenue']) for entry in monthly_stats]
@@ -468,8 +460,7 @@ def item_add():
         image = request.files.get('image')
         image_path = save_uploaded_image(image) if image and image.filename else None
 
-        session = get_session()
-        try:
+        with get_db_session() as session:
             item = Item(
                 name=name,
                 buy_date=date.fromisoformat(buy_date),
@@ -486,14 +477,11 @@ def item_add():
             session.commit()
             flash('Item added.')
             return redirect(url_for('tracker.item_list'))
-        finally:
-            session.close()
     return render_template('tracker/item_form.html', item=None, currencies=CURRENCIES)
 
 @tracker_bp.route('/edit/<int:item_id>', methods=['GET', 'POST'])
 def item_edit(item_id):
-    session = get_session()
-    try:
+    with get_db_session() as session:
         item = session.get(Item, item_id)
         if not item:
             return 'Not found', 404
@@ -518,15 +506,12 @@ def item_edit(item_id):
             flash('Item updated.')
             return redirect(url_for('tracker.item_list'))
         return render_template('tracker/item_form.html', item=item, currencies=CURRENCIES)
-    finally:
-        session.close()
 
 
 @tracker_bp.route('/delete/<int:item_id>', methods=['POST'])
 def item_delete(item_id):
     global PRICECHARTING_CACHE_TS
-    session = get_session()
-    try:
+    with get_db_session() as session:
         item = session.get(Item, item_id)
         if item:
             if item.image:
@@ -542,5 +527,4 @@ def item_delete(item_id):
         else:
             flash('Item not found.')
         return redirect(url_for('tracker.item_list'))
-    finally:
-        session.close()
+

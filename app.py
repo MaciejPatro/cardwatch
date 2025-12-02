@@ -5,7 +5,8 @@ import asyncio
 from flask import Flask, render_template, request, redirect, url_for, jsonify, flash
 from db import (
     init_db,
-    get_session,
+    init_db,
+    get_db_session,
     Product,
     Price,
     Daily,
@@ -26,14 +27,18 @@ import tracker_flask
 from tracker_flask import tracker_bp, init_tracker_scheduler, save_uploaded_image
 from datetime import datetime, timedelta
 
-app = Flask(__name__)
-app.secret_key = "change-me"
+from config import Config
+from logging_config import configure_logging
 
-SINGLE_CARD_UPLOAD_FOLDER = os.path.join(tracker_flask.MEDIA_ROOT, "single_card_images")
+app = Flask(__name__)
+app.config.from_object(Config)
+configure_logging(app)
+
+SINGLE_CARD_UPLOAD_FOLDER = os.path.join(app.config['MEDIA_ROOT'], "single_card_images")
 os.makedirs(SINGLE_CARD_UPLOAD_FOLDER, exist_ok=True)
 
 init_db()
-if not os.environ.get("CARDWATCH_DISABLE_SCHEDULER") and (
+if not app.config.get("CARDWATCH_DISABLE_SCHEDULER") and (
     os.environ.get("WERKZEUG_RUN_MAIN") == "true" or not app.debug
 ):
     scheduler = schedule_hourly()
@@ -49,8 +54,7 @@ def home():
 @app.route("/cardwatch")
 @app.route("/cardwatch/")
 def index():
-    s = get_session()
-    try:
+    with get_db_session() as s:
         products = s.query(Product).order_by(Product.name).all()
         model = []
         now = datetime.utcnow()
@@ -108,15 +112,13 @@ def index():
                 "last_ts": latest.ts.strftime("%Y-%m-%d %H:%M") if latest else None,
             })
         return render_template("index.html", products=model)
-    finally:
-        s.close()
+
 
 
 @app.route("/cardwatch/singles")
 @app.route("/cardwatch/singles/")
 def singles():
-    s = get_session()
-    try:
+    with get_db_session() as s:
         cards = s.query(SingleCard).order_by(SingleCard.name).all()
         now = datetime.utcnow()
         model = []
@@ -174,14 +176,11 @@ def singles():
                 }
             )
         return render_template("singles.html", cards=model)
-    finally:
-        s.close()
 
 
 @app.route("/cardwatch/single/<int:cid>")
 def single_card(cid):
-    s = get_session()
-    try:
+    with get_db_session() as s:
         card = s.get(SingleCard, cid)
         if not card:
             return "Not found", 404
@@ -192,15 +191,12 @@ def single_card(cid):
             .first()
         )
         return render_template("single_card.html", card=card, latest=latest)
-    finally:
-        s.close()
 
 
 @app.route("/cardwatch/seller-bundles")
 @app.route("/cardwatch/seller-bundles/")
 def seller_bundles():
-    s = get_session()
-    try:
+    with get_db_session() as s:
         offers = (
             s.query(SingleCardOffer)
             .join(SingleCard)
@@ -264,44 +260,32 @@ def seller_bundles():
         )
 
         return render_template("seller_bundles.html", sellers=sellers)
-    finally:
-        s.close()
 
 @app.route("/cardwatch/product/<int:pid>")
 def product(pid):
-    s = get_session()
-    try:
+    with get_db_session() as s:
         p = s.get(Product, pid)
         if not p:
             return "Not found", 404
         return render_template("product.html", product=p)
-    finally:
-        s.close()
 
 
 @app.route("/cardwatch/api/product/<int:pid>/series")
 def api_series(pid):
-    s = get_session()
-    try:
+    with get_db_session() as s:
         points = s.query(Price).filter_by(product_id=pid).order_by(Price.ts).all()
         return jsonify([{"t": pr.ts.isoformat(), "low": pr.low, "avg5": pr.avg5} for pr in points])
-    finally:
-        s.close()
 
 @app.route("/cardwatch/api/product/<int:pid>/daily")
 def api_daily(pid):
-    s = get_session()
-    try:
+    with get_db_session() as s:
         points = s.query(Daily).filter_by(product_id=pid).order_by(Daily.day).all()
         return jsonify([{"d": d.day.isoformat(), "low": d.low, "avg": d.avg} for d in points])
-    finally:
-        s.close()
 
 
 @app.route("/cardwatch/api/single/<int:cid>/series")
 def api_single_series(cid):
-    s = get_session()
-    try:
+    with get_db_session() as s:
         points = (
             s.query(SingleCardPrice)
             .filter_by(card_id=cid)
@@ -314,14 +298,11 @@ def api_single_series(cid):
                 for pr in points
             ]
         )
-    finally:
-        s.close()
 
 
 @app.route("/cardwatch/api/single/<int:cid>/daily")
 def api_single_daily(cid):
-    s = get_session()
-    try:
+    with get_db_session() as s:
         points = (
             s.query(SingleCardDaily)
             .filter_by(card_id=cid)
@@ -334,8 +315,6 @@ def api_single_daily(cid):
                 for d in points
             ]
         )
-    finally:
-        s.close()
 
 @app.route("/cardwatch/add", methods=["POST"])
 def add():
@@ -345,19 +324,16 @@ def add():
     if not (name and url and country):
         flash("Please provide name, url, and country.")
         return redirect(url_for("index"))
-    s = get_session()
     pid = None
     try:
-        p = Product(name=name, url=url, country=country)
-        s.add(p)
-        s.commit()
-        pid = p.id
-        flash("Added.")
+        with get_db_session() as s:
+            p = Product(name=name, url=url, country=country)
+            s.add(p)
+            s.commit()
+            pid = p.id
+            flash("Added.")
     except Exception as e:
-        s.rollback()
         flash(f"Error: {e}")
-    finally:
-        s.close()
     if pid:
         try:
             asyncio.run(scrape_once([pid]))
@@ -391,25 +367,22 @@ def add_single():
             flash(str(exc))
             return redirect(url_for("singles"))
 
-    s = get_session()
     cid = None
     try:
-        card = SingleCard(
-            name=name,
-            url=url,
-            language=language,
-            condition="Mint or Near Mint",
-            image_url=image_url,
-        )
-        s.add(card)
-        s.commit()
-        cid = card.id
-        flash("Single card added.")
+        with get_db_session() as s:
+            card = SingleCard(
+                name=name,
+                url=url,
+                language=language,
+                condition="Mint or Near Mint",
+                image_url=image_url,
+            )
+            s.add(card)
+            s.commit()
+            cid = card.id
+            flash("Single card added.")
     except Exception as e:
-        s.rollback()
         flash(f"Error: {e}")
-    finally:
-        s.close()
 
     if cid:
         try:
@@ -420,8 +393,7 @@ def add_single():
 
 @app.route("/cardwatch/edit/<int:pid>", methods=["GET", "POST"])
 def edit(pid):
-    s = get_session()
-    try:
+    with get_db_session() as s:
         p = s.get(Product, pid)
         if not p:
             return "Not found", 404
@@ -443,33 +415,25 @@ def edit(pid):
                     s.rollback()
                     flash(f"Error: {e}")
         return render_template("edit.html", product=p)
-    finally:
-        s.close()
 
 @app.route("/cardwatch/toggle/<int:pid>")
 def toggle(pid):
-    s = get_session()
-    try:
+    with get_db_session() as s:
         p = s.query(Product).get(pid)
         if not p: return "Not found", 404
         p.is_enabled = 0 if p.is_enabled else 1
         s.commit()
         return redirect(url_for("index"))
-    finally:
-        s.close()
 
 @app.route("/cardwatch/delete/<int:pid>", methods=["POST"])
 def delete(pid):
-    s = get_session()
-    try:
+    with get_db_session() as s:
         p = s.query(Product).get(pid)
         if not p: return "Not found", 404
         s.delete(p)
         s.commit()
         flash("Deleted.")
         return redirect(url_for("index"))
-    finally:
-        s.close()
 
 if __name__ == "__main__":
     app.run(use_reloader=False)
