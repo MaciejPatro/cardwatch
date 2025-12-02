@@ -96,7 +96,7 @@ def to_dec(val):
 
 def _update_cache(items):
     for item in items:
-        if item.link:
+        if item.link and not item.sell_date:
             PRICECHARTING_CACHE[item.id] = fetch_pricecharting_prices(item.link)
         else:
             PRICECHARTING_CACHE[item.id] = {"psa10_usd": None, "ungraded_usd": None}

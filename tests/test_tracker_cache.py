@@ -46,3 +46,50 @@ def test_refresh_pricecharting_cache_handles_items_without_link(monkeypatch):
     session.query(Item).filter(Item.id.in_(ids)).delete(synchronize_session=False)
     session.commit()
     session.close()
+
+
+def test_refresh_pricecharting_cache_skips_sold_items(monkeypatch):
+    tracker_flask.PRICECHARTING_CACHE.clear()
+    session = get_session()
+    sold_item = Item(
+        name='SoldItem',
+        buy_date=date.today(),
+        link='http://example.com/sold',
+        graded=0,
+        price=10.0,
+        currency='USD',
+        sell_date=date.today(),
+        sell_price=15.0
+    )
+    session.add(sold_item)
+    session.commit()
+    item_id = sold_item.id
+    session.close()
+
+    # Mock fetch to raise an error if called with the sold item's URL
+    sold_url = 'http://example.com/sold'
+    called_urls = []
+    def mock_fetch(url):
+        called_urls.append(url)
+        return {'psa10_usd': 100.0, 'ungraded_usd': 50.0}
+
+    monkeypatch.setattr(
+        tracker_flask,
+        'fetch_pricecharting_prices',
+        mock_fetch,
+    )
+
+    tracker_flask.refresh_pricecharting_cache()
+
+    assert item_id in tracker_flask.PRICECHARTING_CACHE
+    # Should be None/empty because it was skipped
+    assert tracker_flask.PRICECHARTING_CACHE[item_id] == {
+        'psa10_usd': None,
+        'ungraded_usd': None,
+    }
+    assert sold_url not in called_urls, "fetch_pricecharting_prices should not be called for the sold item URL"
+
+    session = get_session()
+    session.query(Item).filter(Item.id == item_id).delete()
+    session.commit()
+    session.close()

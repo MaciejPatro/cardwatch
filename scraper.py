@@ -112,7 +112,7 @@ def parse_single_card_prices(html: str, language: str):
             continue
         # Language is exposed via tooltip attributes on the flag icon
         lang_icon = r.select_one(
-            ".product-attributes [data-bs-original-title], .product-attributes [aria-label]"
+            ".product-attributes .icon[data-bs-original-title], .product-attributes .icon[aria-label]"
         )
         lang_text = None
         if lang_icon:
