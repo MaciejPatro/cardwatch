@@ -6,7 +6,91 @@
         <h2 class="mb-0">Tracker Statistics</h2>
         <div class="d-flex flex-wrap gap-2">
             <a class="btn btn-outline-secondary" href="{{ url_for('tracker.item_list') }}">Back to Tracker</a>
-            <a class="btn btn-primary" href="{{ url_for('tracker.revenue_trend') }}">Revenue Trend</a>
+        </div>
+    </div>
+
+    <!-- Financial Summary -->
+    <!-- Financial Summary -->
+    <div class="row row-cols-1 row-cols-md-4 g-3 mb-4">
+        <div class="col">
+            <div class="card h-100 border-primary">
+                <div class="card-body">
+                    <h6 class="text-uppercase text-muted fw-semibold" style="font-size: 0.75rem;">Total Spent</h6>
+                    <div class="fs-5 fw-bold">CHF {{ totals.total_deployed|format_float(0) }}</div>
+                </div>
+            </div>
+        </div>
+        <div class="col">
+            <div class="card h-100 border-secondary">
+                <div class="card-body">
+                    <h6 class="text-uppercase text-muted fw-semibold" style="font-size: 0.75rem;">Personal Collection
+                    </h6>
+                    <div class="fs-5 fw-bold">CHF {{ totals.not_for_sale_total|format_float(0) }}</div>
+                </div>
+            </div>
+        </div>
+        <div class="col">
+            <div class="card h-100 border-secondary">
+                <div class="card-body">
+                    <h6 class="text-uppercase text-muted fw-semibold" style="font-size: 0.75rem;">Booster Box Inv.</h6>
+                    <div class="fs-5 fw-bold">CHF {{ totals.booster_box_total|format_float(0) }}</div>
+                </div>
+            </div>
+        </div>
+        <div class="col">
+            <div class="card h-100 border-secondary">
+                <div class="card-body">
+                    <h6 class="text-uppercase text-muted fw-semibold" style="font-size: 0.75rem;">For Grading</h6>
+                    <div class="fs-5 fw-bold">CHF {{ totals.grading_total|format_float(0) }}</div>
+                </div>
+            </div>
+        </div>
+        <div class="col">
+            <div class="card h-100 border-info">
+                <div class="card-body">
+                    <h6 class="text-uppercase text-muted fw-semibold" style="font-size: 0.75rem;">Already Sold</h6>
+                    <div class="fs-5 fw-bold">CHF {{ totals.sold_cost_basis|format_float(0) }}</div>
+                </div>
+            </div>
+        </div>
+        <div class="col">
+            <div class="card h-100 border-warning">
+                <div class="card-body">
+                    <h6 class="text-uppercase text-muted fw-semibold" style="font-size: 0.75rem;">Active Inventory</h6>
+                    <div class="fs-5 fw-bold">CHF {{ totals.inventory_cost_basis|format_float(0) }}</div>
+                    <small class="text-muted">{{ totals.inventory_count }} items</small>
+                </div>
+            </div>
+        </div>
+        <div class="col">
+            <div class="card h-100 border-success">
+                <div class="card-body">
+                    <h6 class="text-uppercase text-muted fw-semibold" style="font-size: 0.75rem;">Realized P&L</h6>
+                    <div class="fs-5 fw-bold {{ 'text-success' if totals.revenue > 0 else 'text-danger' }}">
+                        {{ '+' if totals.revenue > 0 }}CHF {{ totals.revenue|format_float(0) }}
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col">
+            <div class="card h-100 border-warning">
+                <div class="card-body">
+                    <h6 class="text-uppercase text-muted fw-semibold" style="font-size: 0.75rem;">Unrealized P&L</h6>
+                    <div class="fs-5 fw-bold {{ 'text-success' if totals.unrealized_pl > 0 else 'text-danger' }}">
+                        {{ '+' if totals.unrealized_pl > 0 }}CHF {{ totals.unrealized_pl|format_float(0) }}
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col">
+            <div class="card h-100 bg-light">
+                <div class="card-body">
+                    <h6 class="text-uppercase text-muted fw-semibold" style="font-size: 0.75rem;">Total +/-</h6>
+                    <div class="fs-5 fw-bold {{ 'text-success' if totals.total_net > 0 else 'text-danger' }}">
+                        {{ '+' if totals.total_net > 0 }}CHF {{ totals.total_net|format_float(0) }}
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -16,12 +100,13 @@
                 <div class="card-body">
                     <h6 class="text-uppercase text-muted fw-semibold">Average days to sell</h6>
                     {% if summary_stats['average_sale_days'] is not none %}
-                        <div class="display-6">{{ summary_stats['average_sale_days']|format_float(1) }}</div>
-                        <p class="text-muted mb-0">
-                            Across {{ summary_stats['sold_items'] }} sold {{ 'item' if summary_stats['sold_items'] == 1 else 'items' }}.
-                        </p>
+                    <div class="display-6">{{ summary_stats['average_sale_days']|format_float(1) }}</div>
+                    <p class="text-muted mb-0">
+                        Across {{ summary_stats['sold_items'] }} sold {{ 'item' if summary_stats['sold_items'] == 1 else
+                        'items' }}.
+                    </p>
                     {% else %}
-                        <p class="text-muted mb-0">Not enough sold items yet to calculate an average.</p>
+                    <p class="text-muted mb-0">Not enough sold items yet to calculate an average.</p>
                     {% endif %}
                 </div>
             </div>
@@ -31,12 +116,13 @@
                 <div class="card-body">
                     <h6 class="text-uppercase text-muted fw-semibold">Sell-through rate</h6>
                     {% if summary_stats['sell_through_pct'] is not none %}
-                        <div class="display-6">{{ summary_stats['sell_through_pct']|format_float(1) }}%</div>
-                        <p class="text-muted mb-0">
-                            {{ summary_stats['sold_items'] }} of {{ summary_stats['sellable_items'] }} sellable {{ 'item' if summary_stats['sellable_items'] == 1 else 'items' }} sold.
-                        </p>
+                    <div class="display-6">{{ summary_stats['sell_through_pct']|format_float(1) }}%</div>
+                    <p class="text-muted mb-0">
+                        {{ summary_stats['sold_items'] }} of {{ summary_stats['sellable_items'] }} sellable {{ 'item' if
+                        summary_stats['sellable_items'] == 1 else 'items' }} sold.
+                    </p>
                     {% else %}
-                        <p class="text-muted mb-0">Add tracker entries to see your sell-through rate.</p>
+                    <p class="text-muted mb-0">Add tracker entries to see your sell-through rate.</p>
                     {% endif %}
                 </div>
             </div>
@@ -52,23 +138,43 @@
         </div>
     </div>
 
-    {% if insight_suggestions %}
-        <div class="card mb-4">
-            <div class="card-header">Other insights you may find useful</div>
-            <div class="card-body">
-                <ul class="mb-0">
-                    {% for suggestion in insight_suggestions %}
-                        <li>{{ suggestion }}</li>
-                    {% endfor %}
-                </ul>
+    <!-- Charts -->
+    <div class="row mb-4">
+        <div class="col-md-6 mb-3 mb-md-0">
+            <div class="card h-100">
+                <div class="card-header bg-white fw-bold">Investment Activity</div>
+                <div class="card-body">
+                    <canvas id="activityChart"></canvas>
+                </div>
             </div>
         </div>
+        <div class="col-md-6">
+            <div class="card h-100">
+                <div class="card-header bg-white fw-bold">Revenue Trend</div>
+                <div class="card-body">
+                    <canvas id="revenueChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% if insight_suggestions %}
+    <div class="card mb-4">
+        <div class="card-header">Other insights you may find useful</div>
+        <div class="card-body">
+            <ul class="mb-0">
+                {% for suggestion in insight_suggestions %}
+                <li>{{ suggestion }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
     {% endif %}
 
     {% if monthly_stats %}
-        <div class="table-responsive">
-            <table class="table table-bordered table-sm table-hover bg-white align-middle">
-                <thead class="table-light">
+    <div class="table-responsive">
+        <table class="table table-bordered table-sm table-hover bg-white align-middle">
+            <thead class="table-light">
                 <tr>
                     <th scope="col">Month</th>
                     <th scope="col">Bought (CHF)</th>
@@ -77,40 +183,40 @@
                     <th scope="col">Revenue (CHF)</th>
                     <th scope="col">ROI (%)</th>
                 </tr>
-                </thead>
-                <tbody>
+            </thead>
+            <tbody>
                 {% for entry in monthly_stats %}
-                    <tr>
-                        <td>{{ entry.label }}</td>
-                        <td>CHF {{ entry.buy_total|format_float(2) }}</td>
-                        <td>CHF {{ entry.not_for_sale_total|format_float(2) }}</td>
-                        <td>CHF {{ entry.sell_total|format_float(2) }}</td>
-                        <td>
-                            {% if entry.revenue > 0 %}
-                                <span class="text-success">+CHF {{ entry.revenue|format_float(2) }}</span>
-                            {% elif entry.revenue < 0 %}
-                                <span class="text-danger">CHF {{ entry.revenue|format_float(2) }}</span>
+                <tr>
+                    <td>{{ entry.label }}</td>
+                    <td>CHF {{ entry.buy_total|format_float(2) }}</td>
+                    <td>CHF {{ entry.not_for_sale_total|format_float(2) }}</td>
+                    <td>CHF {{ entry.sell_total|format_float(2) }}</td>
+                    <td>
+                        {% if entry.revenue > 0 %}
+                        <span class="text-success">+CHF {{ entry.revenue|format_float(2) }}</span>
+                        {% elif entry.revenue < 0 %} <span class="text-danger">CHF {{ entry.revenue|format_float(2)
+                            }}</span>
                             {% else %}
-                                CHF {{ entry.revenue|format_float(2) }}
+                            CHF {{ entry.revenue|format_float(2) }}
                             {% endif %}
-                        </td>
-                        <td>
-                            {% if entry.roi_pct is not none %}
-                                {% if entry.roi_pct > 0 %}
-                                    <span class="text-success">+{{ entry.roi_pct|format_float(1) }}%</span>
-                                {% elif entry.roi_pct < 0 %}
-                                    <span class="text-danger">{{ entry.roi_pct|format_float(1) }}%</span>
-                                {% else %}
-                                    <span class="text-body">{{ entry.roi_pct|format_float(1) }}%</span>
-                                {% endif %}
+                    </td>
+                    <td>
+                        {% if entry.roi_pct is not none %}
+                        {% if entry.roi_pct > 0 %}
+                        <span class="text-success">+{{ entry.roi_pct|format_float(1) }}%</span>
+                        {% elif entry.roi_pct < 0 %} <span class="text-danger">{{ entry.roi_pct|format_float(1)
+                            }}%</span>
                             {% else %}
-                                &mdash;
+                            <span class="text-body">{{ entry.roi_pct|format_float(1) }}%</span>
                             {% endif %}
-                        </td>
-                    </tr>
+                            {% else %}
+                            &mdash;
+                            {% endif %}
+                    </td>
+                </tr>
                 {% endfor %}
-                </tbody>
-                <tfoot class="table-light">
+            </tbody>
+            <tfoot class="table-light">
                 <tr>
                     <th scope="row">Total</th>
                     <th>CHF {{ totals.buy_total|format_float(2) }}</th>
@@ -118,20 +224,81 @@
                     <th>CHF {{ totals.sell_total|format_float(2) }}</th>
                     <th>
                         {% if totals.revenue > 0 %}
-                            <span class="text-success">+CHF {{ totals.revenue|format_float(2) }}</span>
-                        {% elif totals.revenue < 0 %}
-                            <span class="text-danger">CHF {{ totals.revenue|format_float(2) }}</span>
-                        {% else %}
+                        <span class="text-success">+CHF {{ totals.revenue|format_float(2) }}</span>
+                        {% elif totals.revenue < 0 %} <span class="text-danger">CHF {{ totals.revenue|format_float(2)
+                            }}</span>
+                            {% else %}
                             CHF {{ totals.revenue|format_float(2) }}
-                        {% endif %}
+                            {% endif %}
                     </th>
                     <th>&mdash;</th>
                 </tr>
-                </tfoot>
-            </table>
-        </div>
+            </tfoot>
+        </table>
+    </div>
     {% else %}
-        <div class="alert alert-info">No tracker data available yet. Start adding items to see statistics.</div>
+    <div class="alert alert-info">No tracker data available yet. Start adding items to see statistics.</div>
     {% endif %}
 </div>
+{% endblock %}
+
+{% block extra_scripts %}
+{{ super() }}
+<script>
+    const chartData = {{ chart_data| tojson }};
+
+    if (chartData && chartData.labels && chartData.labels.length > 0) {
+        // Activity Chart
+        new Chart(document.getElementById('activityChart'), {
+            type: 'bar',
+            data: {
+                labels: chartData.labels,
+                datasets: [
+                    {
+                        label: 'Bought (CHF)',
+                        data: chartData.bought,
+                        backgroundColor: 'rgba(255, 99, 132, 0.5)',
+                        borderColor: 'rgba(255, 99, 132, 1)',
+                        borderWidth: 1
+                    },
+                    {
+                        label: 'Sold (CHF)',
+                        data: chartData.sold,
+                        backgroundColor: 'rgba(75, 192, 192, 0.5)',
+                        borderColor: 'rgba(75, 192, 192, 1)',
+                        borderWidth: 1
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    y: { beginAtZero: true }
+                }
+            }
+        });
+
+        // Revenue Chart
+        new Chart(document.getElementById('revenueChart'), {
+            type: 'line',
+            data: {
+                labels: chartData.labels,
+                datasets: [{
+                    label: 'Revenue (CHF)',
+                    data: chartData.revenue,
+                    borderColor: 'rgb(54, 162, 235)',
+                    backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                    tension: 0.1,
+                    fill: true
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    y: { beginAtZero: true }
+                }
+            }
+        });
+    }
+</script>
 {% endblock %}

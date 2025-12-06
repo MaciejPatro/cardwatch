@@ -18,19 +18,20 @@
                 <div class="col-8 col-md-2">
                     <div class="dropdown w-100">
                         <button
-                                class="btn btn-outline-secondary w-100 dropdown-toggle d-flex align-items-center justify-content-between"
-                                type="button"
-                                id="countryMenu"
-                                data-bs-toggle="dropdown"
-                                data-bs-auto-close="true"
-                                aria-expanded="false">
+                            class="btn btn-outline-secondary w-100 dropdown-toggle d-flex align-items-center justify-content-between"
+                            type="button" id="countryMenu" data-bs-toggle="dropdown" data-bs-auto-close="true"
+                            aria-expanded="false">
                             <span class="label"><span class="fi fi-de me-2"></span>Germany</span>
                         </button>
                         <ul class="dropdown-menu w-100" aria-labelledby="countryMenu" id="countryMenuList">
-                            <li><a class="dropdown-item d-flex align-items-center" href="#" data-value="Germany"><span class="fi fi-de me-2"></span>Germany</a></li>
-                            <li><a class="dropdown-item d-flex align-items-center" href="#" data-value="Switzerland"><span class="fi fi-ch me-2"></span>Switzerland</a></li>
-                            <li><a class="dropdown-item d-flex align-items-center" href="#" data-value="France"><span class="fi fi-fr me-2"></span>France</a></li>
-                            <li><a class="dropdown-item d-flex align-items-center" href="#" data-value="Great Britain"><span class="fi fi-gb me-2"></span>Great Britain</a></li>
+                            <li><a class="dropdown-item d-flex align-items-center" href="#" data-value="Germany"><span
+                                        class="fi fi-de me-2"></span>Germany</a></li>
+                            <li><a class="dropdown-item d-flex align-items-center" href="#"
+                                    data-value="Switzerland"><span class="fi fi-ch me-2"></span>Switzerland</a></li>
+                            <li><a class="dropdown-item d-flex align-items-center" href="#" data-value="France"><span
+                                        class="fi fi-fr me-2"></span>France</a></li>
+                            <li><a class="dropdown-item d-flex align-items-center" href="#"
+                                    data-value="Great Britain"><span class="fi fi-gb me-2"></span>Great Britain</a></li>
                         </ul>
                     </div>
                     <!-- value submitted with the form -->
@@ -46,105 +47,102 @@
     </form>
 </section>
 
-<table id="mainTable"
-       class="table table-striped align-middle"
-       data-toggle="table">
+<table id="mainTable" class="table table-striped align-middle" data-toggle="table">
     <thead class="table-light">
-    <tr>
-        <th data-field="name"        data-sortable="true">Name</th>
-        <th data-field="country"     data-sortable="true">Country</th>
-        <th data-field="current"     data-sortable="true" data-sorter="priceSorter">Current&nbsp;€</th>
-        <th data-field="first"       data-sortable="true" data-sorter="priceSorter">First&nbsp;€</th>
-        <th data-field="trend"       data-sortable="true">Trend</th>
-        <th data-field="pct24"       data-sortable="true" data-sorter="priceSorter">24h%</th>
-        <th data-field="pct7"        data-sortable="true" data-sorter="priceSorter">7d%</th>
-        <th data-field="pct30"       data-sortable="true" data-sorter="priceSorter">30d%</th>
-        <th data-field="supply"      data-sortable="true">Supply</th>
-        <th data-field="heads"       data-sortable="true">Heads‑up</th>
-        <th data-field="last_update" data-sortable="true" data-sorter="minuteDateSorter">Last update</th>
-    </tr>
+        <tr>
+            <th data-field="name" data-sortable="true">Name</th>
+            <th data-field="country" data-sortable="true">Country</th>
+            <th data-field="current" data-sortable="true" data-sorter="priceSorter">Current&nbsp;€</th>
+            <th data-field="first" data-sortable="true" data-sorter="priceSorter">First&nbsp;€</th>
+            <th data-field="trend" data-sortable="true">Trend</th>
+            <th data-field="pct24" data-sortable="true" data-sorter="priceSorter">24h%</th>
+            <th data-field="pct7" data-sortable="true" data-sorter="priceSorter">7d%</th>
+            <th data-field="pct30" data-sortable="true" data-sorter="priceSorter">30d%</th>
+            <th data-field="supply" data-sortable="true">Supply</th>
+            <th data-field="heads" data-sortable="true">Heads‑up</th>
+            <th data-field="last_update" data-sortable="true" data-sorter="minuteDateSorter">Last update</th>
+        </tr>
     </thead>
     <tbody>
-    {% for p in products %}
-    <tr data-href="{{ url_for('product', pid=p.id) }}">
-        <td>{{ p.name }}</td>
-        <td>
-            {% if p.country == "Germany" %}
-            <span class="fi fi-de" title="Germany"></span>
-            {% elif p.country == "Switzerland" %}
-            <span class="fi fi-ch" title="Switzerland"></span>
-            {% elif p.country == "France" %}
-            <span class="fi fi-fr" title="France"></span>
-            {% elif p.country == "Great Britain" %}
-            <span class="fi fi-gb" title="Great Britain"></span>
-            {% else %}
-            {{ p.country }}
-            {% endif %}
-        </td>
-        <!-- New: current and first -->
-        <td>
-            {% if p.current_low is not none %}
-            €{{ '%.2f'|format(p.current_low) }}
-            {% if p.first_low is not none %}
-            {% set delta = p.current_low - p.first_low %}
-                {% if delta < 0 %}
-                <small class="ms-2 text-success">
-                    ▼ {{ '%.2f'|format(delta) }}
-                </small>
-                {% elif delta > 0 %}
-                <small class="ms-2 text-danger">
-                    ▲ {{ '%.2f'|format(delta) }}
-                </small>
+        {% for p in products %}
+        <tr data-href="{{ url_for('product', pid=p.id) }}">
+            <td>{{ p.name }}</td>
+            <td>
+                {% if p.country == "Germany" %}
+                <span class="fi fi-de" title="Germany"></span>
+                {% elif p.country == "Switzerland" %}
+                <span class="fi fi-ch" title="Switzerland"></span>
+                {% elif p.country == "France" %}
+                <span class="fi fi-fr" title="France"></span>
+                {% elif p.country == "Great Britain" %}
+                <span class="fi fi-gb" title="Great Britain"></span>
                 {% else %}
-                <small class="ms-2 text-muted">
-                    ・0.00
-                </small>
+                {{ p.country }}
                 {% endif %}
-            {% endif %}
-            {% else %}
-            —
-            {% endif %}
-        </td>
-        <td>
-            {% if p.first_low is not none %}
-            €{{ '%.2f'|format(p.first_low) }}
-            {% else %}—{% endif %}
-        </td>
+            </td>
+            <!-- New: current and first -->
+            <td>
+                {% if p.current_low is not none %}
+                €{{ '%.2f'|format(p.current_low) }}
+                {% if p.first_low is not none %}
+                {% set delta = p.current_low - p.first_low %}
+                {% if delta < 0 %} <small class="ms-2 text-success">
+                    ▼ {{ '%.2f'|format(delta) }}
+                    </small>
+                    {% elif delta > 0 %}
+                    <small class="ms-2 text-danger">
+                        ▲ {{ '%.2f'|format(delta) }}
+                    </small>
+                    {% else %}
+                    <small class="ms-2 text-muted">
+                        ・0.00
+                    </small>
+                    {% endif %}
+                    {% endif %}
+                    {% else %}
+                    —
+                    {% endif %}
+            </td>
+            <td>
+                {% if p.first_low is not none %}
+                €{{ '%.2f'|format(p.first_low) }}
+                {% else %}—{% endif %}
+            </td>
 
-        <td class="trend {{ p.trend }}">{{ p.trend }}</td>
-        <td>
-            {% if p.pct24 is not none %}
-            {% set cls = 'text-success' if p.pct24 > 0 else ('text-danger' if p.pct24 < 0 else 'text-muted') %}
-            <span class="{{ cls }}">{{ '%.2f'|format(p.pct24) }}</span>
-            {% else %}—{% endif %}
-        </td>
-        <td>
-            {% if p.pct7 is not none %}
-            {% set cls = 'text-success' if p.pct7 > 0 else ('text-danger' if p.pct7 < 0 else 'text-muted') %}
-            <span class="{{ cls }}">{{ '%.2f'|format(p.pct7) }}</span>
-            {% else %}—{% endif %}
-        </td>
-        <td>
-            {% if p.pct30 is not none %}
-            {% set cls = 'text-success' if p.pct30 > 0 else ('text-danger' if p.pct30 < 0 else 'text-muted') %}
-            <span class="{{ cls }}">{{ '%.2f'|format(p.pct30) }}</span>
-            {% else %}—{% endif %}
-        </td>
-        <td>{{ p.supply if p.supply is not none else '—' }}</td>
-        <td>
-            {% if p.heads %}
-            <span class="badge bg-warning text-dark">
-    LOW NOW: €{{ '%.2f'|format(p.current_low) }}
-    {% if p.avg7 %} vs 7-day €{{ '%.2f'|format(p.avg7) }}{% endif %}
-  </span>
-            {% else %}
-            —
-            {% endif %}
+            <td class="trend {{ p.trend }}">{{ p.trend }}</td>
+            <td>
+                {% if p.pct24 is not none %}
+                {% set cls = 'text-success' if p.pct24 > 0 else ('text-danger' if p.pct24 < 0 else 'text-muted' ) %}
+                    <span class="{{ cls }}">{{ '%.2f'|format(p.pct24) }}</span>
+                    {% else %}—{% endif %}
+            </td>
+            <td>
+                {% if p.pct7 is not none %}
+                {% set cls = 'text-success' if p.pct7 > 0 else ('text-danger' if p.pct7 < 0 else 'text-muted' ) %} <span
+                    class="{{ cls }}">{{ '%.2f'|format(p.pct7) }}</span>
+                    {% else %}—{% endif %}
+            </td>
+            <td>
+                {% if p.pct30 is not none %}
+                {% set cls = 'text-success' if p.pct30 > 0 else ('text-danger' if p.pct30 < 0 else 'text-muted' ) %}
+                    <span class="{{ cls }}">{{ '%.2f'|format(p.pct30) }}</span>
+                    {% else %}—{% endif %}
+            </td>
+            <td>{{ p.supply if p.supply is not none else '—' }}</td>
+            <td>
+                {% if p.heads %}
+                <span class="badge bg-warning text-dark">
+                    LOW NOW: €{{ '%.2f'|format(p.current_low) }}
+                    {% if p.avg7 %} vs 7-day €{{ '%.2f'|format(p.avg7) }}{% endif %}
+                </span>
+                {% else %}
+                —
+                {% endif %}
 
-        </td>
-        <td>{{ p.last_ts or '—' }}</td>
-    </tr>
-    {% endfor %}
+            </td>
+            <td>{{ p.last_ts or '—' }}</td>
+        </tr>
+        {% endfor %}
     </tbody>
 
 </table>
@@ -215,8 +213,8 @@
 
     // Country dropdown handler (if you use the custom dropdown)
     document.addEventListener('DOMContentLoaded', function () {
-        const btn   = document.getElementById('countryMenu');
-        const list  = document.getElementById('countryMenuList');
+        const btn = document.getElementById('countryMenu');
+        const list = document.getElementById('countryMenuList');
         const input = document.getElementById('countryInput');
         if (!btn || !list || !input) return;
 

@@ -3,6 +3,7 @@ from collections import OrderedDict
 from datetime import date, datetime
 from decimal import Decimal, ROUND_HALF_UP
 from threading import Thread
+import time
 import uuid
 
 from flask import (
@@ -100,6 +101,7 @@ def _update_cache(items):
     for item in items:
         if item.link and not item.sell_date:
             PRICECHARTING_CACHE[item.id] = fetch_pricecharting_prices(item.link)
+            time.sleep(5)
         else:
             PRICECHARTING_CACHE[item.id] = {"psa10_usd": None, "ungraded_usd": None}
     global PRICECHARTING_CACHE_TS
@@ -345,18 +347,19 @@ def api_cache_ts():
 @tracker_bp.route('/')
 def item_list():
     with get_db_session() as session:
-        hide_not_for_sale = request.args.get('hide_not_for_sale') == '1'
-
         items = session.query(Item).order_by(Item.buy_date.desc()).all()
         fx_chf = get_fx_rates("CHF")
         charting_prices = get_charting_prices(items)
         fx_dict = calculate_fx_dict(items, charting_prices, fx_chf)
         possible_gain_chf = calculate_possible_gain_chf(items, charting_prices, fx_chf)
 
-        visible_items = [
-            item for item in items
-            if not (hide_not_for_sale and item.not_for_sale)
-        ]
+        # Filter logic
+        category_filter = request.args.get('category_filter', 'All')
+        
+        if category_filter != 'All':
+            visible_items = [item for item in items if item.category == category_filter]
+        else:
+            visible_items = items
 
         invested = sum(
             float(item.price) * get_fx_rates(item.currency)["CHF"]
@@ -394,9 +397,84 @@ def item_list():
             bought_finished_chf=bought_finished_chf,
             sold_finished_chf=sold_finished_chf,
             cache_ts=PRICECHARTING_CACHE_TS,
+
             not_for_sale_total_chf=not_for_sale_total_chf,
-            hide_not_for_sale=hide_not_for_sale,
+            category_filter=category_filter,
         )
+
+
+def calculate_financials(items, monthly_stats):
+    fx_chf = get_fx_rates("CHF")
+    charting_prices = get_charting_prices(items)
+    
+    total_deployed = Decimal('0')
+    current_holdings = Decimal('0')
+    not_for_sale_total = Decimal('0')
+    sold_cost_basis = Decimal('0')
+    inventory_cost_basis = Decimal('0')
+    inventory_count = 0
+    
+    # New Categories
+    booster_box_total = Decimal('0')
+    grading_total = Decimal('0')
+
+    for item in items:
+        fx = Decimal(str(get_fx_rates(item.currency).get('CHF', 1.0)))
+        cost_chf = to_dec(item.price) * fx
+        
+        total_deployed += cost_chf
+        
+        # Category-based totals
+        if item.category == "Personal Collection" or item.not_for_sale:
+            not_for_sale_total += cost_chf
+        elif item.category == "Booster Box Investment":
+            booster_box_total += cost_chf
+        elif item.category == "For Grading":
+            grading_total += cost_chf
+        
+        if item.sell_date:
+            sold_cost_basis += cost_chf
+        else:
+            current_holdings += cost_chf
+            # Active Inventory logic: Not sold AND (Active OR Booster OR Grading)
+            # Basically anything not Personal Collection and not Sold
+            if item.category != "Personal Collection" and not item.not_for_sale:
+                inventory_cost_basis += cost_chf
+                inventory_count += 1
+
+    unrealized_pl = Decimal(str(calculate_possible_gain_chf(items, charting_prices, fx_chf)))
+    
+    # Add gain from not_for_sale items to Unrealized P&L
+    not_for_sale_gain_usd = 0.0
+    for item in items:
+        if item.not_for_sale and not item.sell_date:
+             paid_usd = get_paid_usd(item)
+             ref_usd = get_reference_usd(item, charting_prices)
+             if ref_usd is not None:
+                 not_for_sale_gain_usd += (ref_usd - paid_usd)
+    
+    if fx_chf.get("USD"):
+        unrealized_pl += Decimal(str(not_for_sale_gain_usd / fx_chf["USD"]))
+
+    realized_pl = sum((entry['revenue'] for entry in monthly_stats), Decimal('0'))
+    total_net = (realized_pl + unrealized_pl)
+
+    return {
+        "total_deployed": total_deployed.quantize(Q, rounding=ROUND_HALF_UP),
+        "current_holdings": current_holdings.quantize(Q, rounding=ROUND_HALF_UP),
+        "not_for_sale_total": not_for_sale_total.quantize(Q, rounding=ROUND_HALF_UP),
+        "sold_cost_basis": sold_cost_basis.quantize(Q, rounding=ROUND_HALF_UP),
+        "inventory_cost_basis": inventory_cost_basis.quantize(Q, rounding=ROUND_HALF_UP),
+        "inventory_count": inventory_count,
+        "booster_box_total": booster_box_total.quantize(Q, rounding=ROUND_HALF_UP),
+        "grading_total": grading_total.quantize(Q, rounding=ROUND_HALF_UP),
+        "realized_pl": realized_pl.quantize(Q, rounding=ROUND_HALF_UP),
+        "unrealized_pl": unrealized_pl.quantize(Q, rounding=ROUND_HALF_UP),
+        "revenue": realized_pl.quantize(Q, rounding=ROUND_HALF_UP),  # Kept for compatibility
+        "total_net": total_net.quantize(Q, rounding=ROUND_HALF_UP),
+        "buy_total": sum((entry['buy_total'] for entry in monthly_stats), Decimal('0')).quantize(Q, rounding=ROUND_HALF_UP),
+        "sell_total": sum((entry['sell_total'] for entry in monthly_stats), Decimal('0')).quantize(Q, rounding=ROUND_HALF_UP)
+    }
 
 
 @tracker_bp.route('/stats')
@@ -405,12 +483,18 @@ def stats_overview():
         items = session.query(Item).order_by(Item.buy_date.asc()).all()
         monthly_stats = calculate_monthly_tracker_stats(items)
         sale_time_stats = calculate_sale_time_stats(items)
-        totals = {
-            'buy_total': sum((entry['buy_total'] for entry in monthly_stats), Decimal('0')).quantize(Q, rounding=ROUND_HALF_UP),
-            'sell_total': sum((entry['sell_total'] for entry in monthly_stats), Decimal('0')).quantize(Q, rounding=ROUND_HALF_UP),
-            'revenue': sum((entry['revenue'] for entry in monthly_stats), Decimal('0')).quantize(Q, rounding=ROUND_HALF_UP),
-            'not_for_sale_total': sum((entry['not_for_sale_total'] for entry in monthly_stats), Decimal('0')).quantize(Q, rounding=ROUND_HALF_UP),
+
+        # Chart Data
+        chart_data = {
+            'labels': [entry['label'] for entry in monthly_stats],
+            'bought': [float(entry['buy_total']) for entry in monthly_stats],
+            'sold': [float(entry['sell_total']) for entry in monthly_stats],
+            'revenue': [float(entry['revenue']) for entry in monthly_stats],
         }
+
+        # Financials
+        totals = calculate_financials(items, monthly_stats)
+        
         insight_suggestions = [
             'Track the sell-through rate over time to spot changes in demand.',
             'Review active listings that have been live the longest to consider repricing or promotions.',
@@ -423,6 +507,7 @@ def stats_overview():
         totals=totals,
         summary_stats=sale_time_stats,
         insight_suggestions=insight_suggestions,
+        chart_data=chart_data,
     )
 
 
@@ -457,23 +542,37 @@ def item_add():
         sell_date = date.fromisoformat(sell_date_val) if sell_date_val else None
         not_for_sale = 1 if request.form.get('not_for_sale') else 0
 
-        image = request.files.get('image')
-        image_path = save_uploaded_image(image) if image and image.filename else None
+        image = request.files.get("image")
+        # The line below was redundant in the provided snippet, as not_for_sale was already defined.
+        # not_for_sale = 1 if request.form.get("not_for_sale") else 0 
+        category = request.form.get("category", "Active")
+        
+        # Sync not_for_sale with category for backward compatibility
+        if category == "Personal Collection":
+            not_for_sale = 1
+        elif category == "Active":
+            not_for_sale = 0
+        # For other categories, default to not_for_sale=0 unless specified
+        
+        image_filename = None
+        if image and image.filename:
+            image_filename = save_uploaded_image(image) # Changed to save_uploaded_image to match existing function name
 
         with get_db_session() as session:
-            item = Item(
+            new_item = Item(
                 name=name,
-                buy_date=date.fromisoformat(buy_date),
+                buy_date=date.fromisoformat(buy_date), # Kept original date conversion
                 link=link,
                 graded=graded,
                 price=price,
                 currency=currency,
                 sell_price=sell_price,
                 sell_date=sell_date,
-                image=image_path,
+                image=image_filename,
                 not_for_sale=not_for_sale,
+                category=category
             )
-            session.add(item)
+            session.add(new_item) # Changed to new_item
             session.commit()
             flash('Item added.')
             return redirect(url_for('tracker.item_list'))
@@ -497,6 +596,13 @@ def item_edit(item_id):
             sd = request.form.get('sell_date')
             item.sell_date = date.fromisoformat(sd) if sd else None
             item.not_for_sale = 1 if request.form.get('not_for_sale') else 0
+            item.category = request.form.get('category', 'Active')
+
+            # Sync not_for_sale with category
+            if item.category == 'Personal Collection':
+                item.not_for_sale = 1
+            elif item.category == 'Active':
+                item.not_for_sale = 0
 
             image = request.files.get('image')
             if image and image.filename:

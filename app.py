@@ -115,66 +115,85 @@ def index():
 
 
 
+def calculate_card_stats(session, card):
+    now = datetime.utcnow()
+    latest = (
+        session.query(SingleCardPrice)
+        .filter_by(card_id=card.id)
+        .order_by(SingleCardPrice.ts.desc())
+        .first()
+    )
+    first = (
+        session.query(SingleCardPrice)
+        .filter_by(card_id=card.id)
+        .filter(SingleCardPrice.low.isnot(None))
+        .order_by(SingleCardPrice.ts.asc())
+        .first()
+    )
+
+    def get_past(delta):
+        return (
+            session.query(SingleCardPrice)
+            .filter(
+                SingleCardPrice.card_id == card.id,
+                SingleCardPrice.ts <= now - delta,
+            )
+            .order_by(SingleCardPrice.ts.desc())
+            .first()
+        )
+
+    past7 = get_past(timedelta(days=7))
+    past30 = get_past(timedelta(days=30))
+    past90 = get_past(timedelta(days=90))
+
+    def pct(cur, prev):
+        if cur is None or prev is None or prev == 0:
+            return None
+        return (cur - prev) / prev * 100.0
+
+    current_low = latest.low if latest else None
+    current_supply = latest.supply if latest else None
+    avg5 = latest.avg5 if latest else None
+
+    # Indicators
+    supply_drop = False
+    if current_supply is not None and past7 and past7.supply:
+        if current_supply < past7.supply * 0.9:
+            supply_drop = True
+    
+    price_outlier = False
+    if current_low is not None and avg5:
+        if current_low < avg5 * 0.7:
+            price_outlier = True
+
+    return {
+        "id": card.id,
+        "name": card.name,
+        "url": card.url,
+        "language": card.language,
+        "condition": card.condition,
+        "image_url": card.image_url,
+        "trend": compute_single_trend(session, card.id),
+        "from_price": latest.from_price if latest else None,
+        "price_trend": latest.price_trend if latest else None,
+        "avg7_price": latest.avg7_price if latest else None,
+        "avg1_price": latest.avg1_price if latest else None,
+        "current_low": current_low,
+        "pct30": pct(current_low, past30.low if past30 else None),
+        "pct90": pct(current_low, past90.low if past90 else None),
+        "pct_all": pct(current_low, first.low if first else None),
+        "last_ts": latest.ts.strftime("%Y-%m-%d %H:%M") if latest else None,
+        "supply_drop": supply_drop,
+        "price_outlier": price_outlier,
+    }
+
+
 @app.route("/cardwatch/singles")
 @app.route("/cardwatch/singles/")
 def singles():
     with get_db_session() as s:
         cards = s.query(SingleCard).order_by(SingleCard.name).all()
-        now = datetime.utcnow()
-        model = []
-        for c in cards:
-            latest = (
-                s.query(SingleCardPrice)
-                .filter_by(card_id=c.id)
-                .order_by(SingleCardPrice.ts.desc())
-                .first()
-            )
-            first = (
-                s.query(SingleCardPrice)
-                .filter_by(card_id=c.id)
-                .order_by(SingleCardPrice.ts.asc())
-                .first()
-            )
-
-            def get_past(delta):
-                return (
-                    s.query(SingleCardPrice)
-                    .filter(
-                        SingleCardPrice.card_id == c.id,
-                        SingleCardPrice.ts <= now - delta,
-                    )
-                    .order_by(SingleCardPrice.ts.desc())
-                    .first()
-                )
-
-            past30 = get_past(timedelta(days=30))
-            past90 = get_past(timedelta(days=90))
-
-            def pct(cur, prev):
-                if cur is None or prev is None or prev == 0:
-                    return None
-                return (cur - prev) / prev * 100.0
-
-            current_low = latest.low if latest else None
-            model.append(
-                {
-                    "id": c.id,
-                    "name": c.name,
-                    "url": c.url,
-                    "language": c.language,
-                    "image_url": c.image_url,
-                    "trend": compute_single_trend(s, c.id),
-                    "from_price": latest.from_price if latest else None,
-                    "price_trend": latest.price_trend if latest else None,
-                    "avg7_price": latest.avg7_price if latest else None,
-                    "avg1_price": latest.avg1_price if latest else None,
-                    "current_low": current_low,
-                    "pct30": pct(current_low, past30.low if past30 else None),
-                    "pct90": pct(current_low, past90.low if past90 else None),
-                    "pct_all": pct(current_low, first.low if first else None),
-                    "last_ts": latest.ts.strftime("%Y-%m-%d %H:%M") if latest else None,
-                }
-            )
+        model = [calculate_card_stats(s, c) for c in cards]
         return render_template("singles.html", cards=model)
 
 
@@ -190,7 +209,8 @@ def single_card(cid):
             .order_by(SingleCardPrice.ts.desc())
             .first()
         )
-        return render_template("single_card.html", card=card, latest=latest)
+        stats = calculate_card_stats(s, card)
+        return render_template("single_card.html", card=card, latest=latest, stats=stats)
 
 
 @app.route("/cardwatch/seller-bundles")

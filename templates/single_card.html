@@ -2,9 +2,9 @@
 {% block content %}
 <div class="d-flex align-items-center mb-3">
     {% if card.image_url %}
-        {% set is_link = card.image_url.startswith('http') %}
-        {% set src = card.image_url if is_link else url_for('tracker.media', filename=card.image_url) %}
-        <img src="{{ src }}" alt="{{ card.name }}" class="me-3" style="width:80px;height:80px;object-fit:cover;"/>
+    {% set is_link = card.image_url.startswith('http') %}
+    {% set src = card.image_url if is_link else url_for('tracker.media', filename=card.image_url) %}
+    <img src="{{ src }}" alt="{{ card.name }}" class="me-3" style="width:80px;height:80px;object-fit:cover;" />
     {% endif %}
     <div>
         <h2 class="mb-1">{{ card.name }}</h2>
@@ -19,6 +19,74 @@
 </div>
 <div class="mb-3">
     <a href="{{ url_for('singles') }}" class="btn btn-sm btn-outline-secondary">Back</a>
+</div>
+
+<div class="card shadow-sm mb-4">
+    <div class="card-header bg-white fw-bold">Statistics</div>
+    <div class="card-body">
+        <div class="row row-cols-2 row-cols-md-4 g-3">
+            <div class="col">
+                <small class="text-muted d-block">Current Price</small>
+                <span class="fs-5 fw-semibold">{{ '€%.2f'|format(stats.current_low) if stats.current_low is not none
+                    else '—' }}</span>
+                {% if stats.price_outlier %}
+                <span class="badge bg-success ms-1" title="Great Deal!"><i class="bi bi-tag-fill"></i></span>
+                {% endif %}
+            </div>
+            <div class="col">
+                <small class="text-muted d-block">From Price</small>
+                <span class="fs-5">{{ '€%.2f'|format(stats.from_price) if stats.from_price is not none else '—'
+                    }}</span>
+            </div>
+            <div class="col">
+                <small class="text-muted d-block">Price Trend</small>
+                <span class="fs-5">{{ '€%.2f'|format(stats.price_trend) if stats.price_trend is not none else '—'
+                    }}</span>
+            </div>
+            <div class="col">
+                <small class="text-muted d-block">Trend</small>
+                <span class="badge bg-light text-dark border">{{ stats.trend }}</span>
+            </div>
+            <div class="col">
+                <small class="text-muted d-block">7-day Avg</small>
+                <span class="fs-5">{{ '€%.2f'|format(stats.avg7_price) if stats.avg7_price is not none else '—'
+                    }}</span>
+            </div>
+            <div class="col">
+                <small class="text-muted d-block">1-day Avg</small>
+                <span class="fs-5">{{ '€%.2f'|format(stats.avg1_price) if stats.avg1_price is not none else '—'
+                    }}</span>
+            </div>
+            <div class="col">
+                <small class="text-muted d-block">30-day Change</small>
+                {% if stats.pct30 is not none %}
+                <span
+                    class="{{ 'text-success' if stats.pct30 > 0 else ('text-danger' if stats.pct30 < 0 else 'text-muted') }} fw-semibold">
+                    {{ '%.2f'|format(stats.pct30) }}%
+                </span>
+                {% else %}
+                <span class="text-muted">—</span>
+                {% endif %}
+            </div>
+            <div class="col">
+                <small class="text-muted d-block">All-time Change</small>
+                {% if stats.pct_all is not none %}
+                <span
+                    class="{{ 'text-success' if stats.pct_all > 0 else ('text-danger' if stats.pct_all < 0 else 'text-muted') }} fw-semibold">
+                    {{ '%.2f'|format(stats.pct_all) }}%
+                </span>
+                {% else %}
+                <span class="text-muted">—</span>
+                {% endif %}
+            </div>
+        </div>
+        {% if stats.supply_drop %}
+        <div class="mt-3">
+            <span class="badge bg-danger"><i class="bi bi-graph-down-arrow"></i> Supply dropping fast (>10% in 7
+                days)</span>
+        </div>
+        {% endif %}
+    </div>
 </div>
 
 <div class="card shadow-sm mb-4">
@@ -40,37 +108,37 @@
 
 {% block extra_scripts %}
 <script>
-async function drawCharts() {
-    const dailyResp = await fetch("{{ url_for('api_single_daily', cid=card.id) }}");
-    const daily = await dailyResp.json();
-    const seriesResp = await fetch("{{ url_for('api_single_series', cid=card.id) }}");
-    const series = await seriesResp.json();
+    async function drawCharts() {
+        const dailyResp = await fetch("{{ url_for('api_single_daily', cid=card.id) }}");
+        const daily = await dailyResp.json();
+        const seriesResp = await fetch("{{ url_for('api_single_series', cid=card.id) }}");
+        const series = await seriesResp.json();
 
-    const dailyCtx = document.getElementById('dailyChart');
-    new Chart(dailyCtx, {
-        type: 'line',
-        data: {
-            labels: daily.map(p => p.d),
-            datasets: [
-                { label: 'Lowest daily price', data: daily.map(p => p.low), borderColor: '#0d6efd', tension: 0.2 },
-                { label: 'Average daily price', data: daily.map(p => p.avg), borderColor: '#198754', tension: 0.2 }
-            ]
-        }
-    });
+        const dailyCtx = document.getElementById('dailyChart');
+        new Chart(dailyCtx, {
+            type: 'line',
+            data: {
+                labels: daily.map(p => p.d),
+                datasets: [
+                    { label: 'Lowest daily price', data: daily.map(p => p.low), borderColor: '#0d6efd', tension: 0.2 },
+                    { label: 'Average daily price', data: daily.map(p => p.avg), borderColor: '#198754', tension: 0.2 }
+                ]
+            }
+        });
 
-    const seriesCtx = document.getElementById('seriesChart');
-    new Chart(seriesCtx, {
-        type: 'line',
-        data: {
-            labels: series.map(p => p.t),
-            datasets: [
-                { label: 'Lowest current price', data: series.map(p => p.low), borderColor: '#0d6efd', tension: 0.2 },
-                { label: 'Average of up to 5 items', data: series.map(p => p.avg5), borderColor: '#dc3545', tension: 0.2 }
-            ]
-        }
-    });
-}
+        const seriesCtx = document.getElementById('seriesChart');
+        new Chart(seriesCtx, {
+            type: 'line',
+            data: {
+                labels: series.map(p => p.t),
+                datasets: [
+                    { label: 'Lowest current price', data: series.map(p => p.low), borderColor: '#0d6efd', tension: 0.2 },
+                    { label: 'Average of up to 5 items', data: series.map(p => p.avg5), borderColor: '#dc3545', tension: 0.2 }
+                ]
+            }
+        });
+    }
 
-drawCharts();
+    drawCharts();
 </script>
 {% endblock %}

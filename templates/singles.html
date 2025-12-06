@@ -29,66 +29,66 @@
 
 <table id="singleTable" class="table table-striped align-middle" data-toggle="table">
     <thead class="table-light">
-    <tr>
-        <th data-field="image">Image</th>
-        <th data-field="name" data-sortable="true">Name</th>
-        <th data-field="language" data-sortable="true">Language</th>
-        <th data-field="current" data-sortable="true" data-sorter="priceSorter">Current €</th>
-        <th data-field="from" data-sortable="true" data-sorter="priceSorter">From €</th>
-        <th data-field="trend_value" data-sortable="true" data-sorter="priceSorter">Price trend €</th>
-        <th data-field="avg7" data-sortable="true" data-sorter="priceSorter">7-day avg €</th>
-        <th data-field="avg1" data-sortable="true" data-sorter="priceSorter">1-day avg €</th>
-        <th data-field="pct30" data-sortable="true" data-sorter="priceSorter">30d %</th>
-        <th data-field="pct90" data-sortable="true" data-sorter="priceSorter">90d %</th>
-        <th data-field="pct_all" data-sortable="true" data-sorter="priceSorter">All-time %</th>
-        <th data-field="trend" data-sortable="true">Trend</th>
-        <th data-field="last_update" data-sortable="true" data-sorter="minuteDateSorter">Last update</th>
-    </tr>
+        <tr>
+            <th data-field="image">Image</th>
+            <th data-field="name" data-sortable="true">Name</th>
+            <th data-field="language" data-sortable="true">Language</th>
+            <th data-field="current" data-sortable="true" data-sorter="priceSorter">Current €</th>
+            <th data-field="from" data-sortable="true" data-sorter="priceSorter">From €</th>
+            <th data-field="trend_value" data-sortable="true" data-sorter="priceSorter">Price trend €</th>
+            <th data-field="avg7" data-sortable="true" data-sorter="priceSorter">7-day avg €</th>
+            <th data-field="avg1" data-sortable="true" data-sorter="priceSorter">1-day avg €</th>
+            <th data-field="pct30" data-sortable="true" data-sorter="priceSorter">30d %</th>
+            <th data-field="pct90" data-sortable="true" data-sorter="priceSorter">90d %</th>
+            <th data-field="pct_all" data-sortable="true" data-sorter="priceSorter">All-time %</th>
+            <th data-field="trend" data-sortable="true">Trend</th>
+            <th data-field="last_update" data-sortable="true" data-sorter="minuteDateSorter">Last update</th>
+        </tr>
     </thead>
     <tbody>
-    {% for c in cards %}
-    <tr data-href="{{ url_for('single_card', cid=c.id) }}">
-        <td>
-            {% if c.image_url %}
+        {% for c in cards %}
+        <tr data-href="{{ url_for('single_card', cid=c.id) }}">
+            <td>
+                {% if c.image_url %}
                 {% set is_link = c.image_url.startswith('http') %}
                 {% set src = c.image_url if is_link else url_for('tracker.media', filename=c.image_url) %}
                 <img src="{{ src }}" alt="{{ c.name }}" class="card-thumb img-thumbnail">
-            {% else %}
+                {% else %}
                 —
-            {% endif %}
-        </td>
-        <td>
-            <div class="fw-semibold">{{ c.name }}</div>
-            <a href="{{ c.url }}" target="_blank" rel="noreferrer">Cardmarket</a>
-        </td>
-        <td>{{ c.language }}</td>
-        <td>{{ '€%.2f'|format(c.current_low) if c.current_low is not none else '—' }}</td>
-        <td>{{ '€%.2f'|format(c.from_price) if c.from_price is not none else '—' }}</td>
-        <td>{{ '€%.2f'|format(c.price_trend) if c.price_trend is not none else '—' }}</td>
-        <td>{{ '€%.2f'|format(c.avg7_price) if c.avg7_price is not none else '—' }}</td>
-        <td>{{ '€%.2f'|format(c.avg1_price) if c.avg1_price is not none else '—' }}</td>
-        <td>
-            {% if c.pct30 is not none %}
-            {% set cls = 'text-success' if c.pct30 > 0 else ('text-danger' if c.pct30 < 0 else 'text-muted') %}
-            <span class="{{ cls }}">{{ '%.2f'|format(c.pct30) }}%</span>
-            {% else %}—{% endif %}
-        </td>
-        <td>
-            {% if c.pct90 is not none %}
-            {% set cls = 'text-success' if c.pct90 > 0 else ('text-danger' if c.pct90 < 0 else 'text-muted') %}
-            <span class="{{ cls }}">{{ '%.2f'|format(c.pct90) }}%</span>
-            {% else %}—{% endif %}
-        </td>
-        <td>
-            {% if c.pct_all is not none %}
-            {% set cls = 'text-success' if c.pct_all > 0 else ('text-danger' if c.pct_all < 0 else 'text-muted') %}
-            <span class="{{ cls }}">{{ '%.2f'|format(c.pct_all) }}%</span>
-            {% else %}—{% endif %}
-        </td>
-        <td class="trend {{ c.trend }}">{{ c.trend }}</td>
-        <td>{{ c.last_ts or '—' }}</td>
-    </tr>
-    {% endfor %}
+                {% endif %}
+            </td>
+            <td>
+                <div class="fw-semibold">{{ c.name }}</div>
+                <a href="{{ c.url }}" target="_blank" rel="noreferrer">Cardmarket</a>
+            </td>
+            <td>{{ c.language }}</td>
+            <td>{{ '€%.2f'|format(c.current_low) if c.current_low is not none else '—' }}</td>
+            <td>{{ '€%.2f'|format(c.from_price) if c.from_price is not none else '—' }}</td>
+            <td>{{ '€%.2f'|format(c.price_trend) if c.price_trend is not none else '—' }}</td>
+            <td>{{ '€%.2f'|format(c.avg7_price) if c.avg7_price is not none else '—' }}</td>
+            <td>{{ '€%.2f'|format(c.avg1_price) if c.avg1_price is not none else '—' }}</td>
+            <td>
+                {% if c.pct30 is not none %}
+                {% set cls = 'text-success' if c.pct30 > 0 else ('text-danger' if c.pct30 < 0 else 'text-muted' ) %}
+                    <span class="{{ cls }}">{{ '%.2f'|format(c.pct30) }}%</span>
+                    {% else %}—{% endif %}
+            </td>
+            <td>
+                {% if c.pct90 is not none %}
+                {% set cls = 'text-success' if c.pct90 > 0 else ('text-danger' if c.pct90 < 0 else 'text-muted' ) %}
+                    <span class="{{ cls }}">{{ '%.2f'|format(c.pct90) }}%</span>
+                    {% else %}—{% endif %}
+            </td>
+            <td>
+                {% if c.pct_all is not none %}
+                {% set cls = 'text-success' if c.pct_all > 0 else ('text-danger' if c.pct_all < 0 else 'text-muted' ) %}
+                    <span class="{{ cls }}">{{ '%.2f'|format(c.pct_all) }}%</span>
+                    {% else %}—{% endif %}
+            </td>
+            <td class="trend {{ c.trend }}">{{ c.trend }}</td>
+            <td>{{ c.last_ts or '—' }}</td>
+        </tr>
+        {% endfor %}
     </tbody>
 </table>
 {% endblock %}

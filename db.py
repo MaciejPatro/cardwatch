@@ -131,6 +131,7 @@ class Item(Base):
     sell_date = Column(Date, nullable=True)
     image = Column(String, nullable=True)
     not_for_sale = Column(Integer, default=0)
+    category = Column(String, default="Active")
 
 def init_db():
     Base.metadata.create_all(ENGINE)
