@@ -324,9 +324,21 @@ def calculate_sale_time_stats(items):
     )
 
     sell_through_pct = None
-    if sellable_items:
+    
+    # Sell-through rate should only consider "Active" items (cards intended for sale)
+    # Exclude "Booster Box Investment", "For Grading", "Personal Collection" etc.
+    active_items_pool = [
+        item for item in items 
+        if item.category == 'Active' or (item.category is None and not item.not_for_sale)
+    ]
+    
+    # From this pool, how many are sold?
+    pool_sold = sum(1 for item in active_items_pool if item.sell_date)
+    pool_total = len(active_items_pool)
+
+    if pool_total > 0:
         sell_through_pct = (
-            (Decimal(sold_items) / Decimal(sellable_items)) * Decimal('100')
+            (Decimal(pool_sold) / Decimal(pool_total)) * Decimal('100')
         ).quantize(Decimal('0.1'), rounding=ROUND_HALF_UP)
 
     return {
