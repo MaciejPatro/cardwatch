@@ -29,7 +29,7 @@
 
 <table id="singleTable" class="table table-striped align-middle" data-toggle="table"
     data-url="{{ url_for('api_singles_list') }}" data-side-pagination="server" data-pagination="true"
-    data-page-list="[10, 25, 50, 100]" data-search="true">
+    data-page-list="[10, 25, 50, 100, 200]" data-page-size="100" data-search="true" data-row-attributes="rowAttributes">
     <thead class="table-light">
         <tr>
             <th data-field="image_url" data-formatter="imageFormatter">Image</th>
@@ -38,6 +38,7 @@
             <th data-field="current_low" data-sortable="true" data-field-name="current" data-formatter="priceFormatter">
                 Current €</th>
             <th data-field="from_price" data-formatter="priceFormatter">From €</th>
+            <th data-field="supply" data-sortable="true">Items</th>
             <th data-field="price_trend" data-formatter="priceFormatter">Price trend €</th>
             <th data-field="avg7_price" data-formatter="priceFormatter">7-day avg €</th>
             <th data-field="avg1_price" data-formatter="priceFormatter">1-day avg €</th>
@@ -54,6 +55,12 @@
 
 {% block extra_scripts %}
 <script>
+    function rowAttributes(row, index) {
+        return {
+            'data-href': `/cardwatch/single/${row.id}`
+        };
+    }
+
     function imageFormatter(value, row) {
         if (!value) return '—';
         let src = value;
@@ -119,5 +126,20 @@
     }
 
     /* Old sorters removed as server side sorting is now used */
+
+    $(function () {
+        $('#singleTable').on('click-row.bs.table', function (e, row, $element, field) {
+            // Prevent navigation if clicking on link or button
+            // Note: click-row fires on row click. 
+            // We can check the event original target but it is not passed directly in all versions.
+            // Let's use the jQuery delegation which controls the target better.
+        });
+
+        $('#singleTable tbody').on('click', 'tr', function (e) {
+            if ($(e.target).closest('a, button').length) return;
+            const href = $(this).data('href');
+            if (href) window.location = href;
+        });
+    });
 </script>
 {% endblock %}

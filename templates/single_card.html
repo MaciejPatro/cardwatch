@@ -1,24 +1,57 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="d-flex align-items-center mb-3">
-    {% if card.image_url %}
-    {% set is_link = card.image_url.startswith('http') %}
-    {% set src = card.image_url if is_link else url_for('tracker.media', filename=card.image_url) %}
-    <img src="{{ src }}" alt="{{ card.name }}" class="me-3" style="width:80px;height:80px;object-fit:cover;" />
-    {% endif %}
-    <div>
-        <h2 class="mb-1">{{ card.name }}</h2>
-        <p class="mb-1">Language: {{ card.language }} • Condition: {{ card.condition }}</p>
-        <p class="mb-0">
-            <a href="{{ card.url }}" target="_blank" rel="noopener">Open listing</a>
-            {% if latest %}
-            • Latest snapshot: {{ latest.ts.strftime('%Y-%m-%d %H:%M') }}
-            {% endif %}
-        </p>
+<div class="row mb-4">
+    <div class="col-md-4 text-center">
+        {% if card.image_url %}
+        {% set is_link = card.image_url.startswith('http') %}
+        {% set src = card.image_url if is_link else url_for('tracker.media', filename=card.image_url) %}
+        <a href="#" data-bs-toggle="modal" data-bs-target="#imageModal">
+            <img src="{{ src }}" alt="{{ card.name }}" class="img-fluid rounded shadow-sm" style="max-height: 400px;" />
+        </a>
+
+        <!-- Image Modal -->
+        <div class="modal fade" id="imageModal" tabindex="-1" aria-labelledby="imageModalLabel" aria-hidden="true">
+            <div class="modal-dialog modal-xl modal-dialog-centered">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="imageModalLabel">{{ card.name }}</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body text-center">
+                        <img src="{{ src }}" class="img-fluid" alt="{{ card.name }}">
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% else %}
+        <div class="bg-light d-flex align-items-center justify-content-center rounded" style="height: 300px;">
+            <span class="text-muted">No Image</span>
+        </div>
+        {% endif %}
     </div>
-</div>
-<div class="mb-3">
-    <a href="{{ url_for('singles') }}" class="btn btn-sm btn-outline-secondary">Back</a>
+    <div class="col-md-8">
+        <div class="mb-3">
+            <a href="{{ url_for('singles') }}" class="btn btn-sm btn-outline-secondary">&larr; Back to list</a>
+        </div>
+
+        <h1 class="display-6 fw-bold mb-2">{{ card.name }}</h1>
+        <div class="mb-3">
+            <span class="badge bg-primary fs-6">{{ card.language }}</span>
+            <span class="badge bg-secondary fs-6">{{ card.condition }}</span>
+        </div>
+
+        <p class="mb-4">
+            <a href="{{ card.url }}" target="_blank" rel="noopener" class="btn btn-outline-primary">
+                <i class="bi bi-box-arrow-up-right"></i> Open on Cardmarket
+            </a>
+        </p>
+
+        {% if latest %}
+        <div class="text-muted small">
+            Last snapshot: {{ latest.ts.strftime('%Y-%m-%d %H:%M') }}
+        </div>
+        {% endif %}
+    </div>
 </div>
 
 <div class="card shadow-sm mb-4">

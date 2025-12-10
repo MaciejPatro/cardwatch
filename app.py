@@ -183,6 +183,7 @@ def calculate_card_stats(session, card):
         "pct90": pct(current_low, past90.low if past90 else None),
         "pct_all": pct(current_low, first.low if first else None),
         "last_ts": latest.ts.strftime("%Y-%m-%d %H:%M") if latest else None,
+        "supply": current_supply,
         "supply_drop": supply_drop,
         "price_outlier": price_outlier,
     }
