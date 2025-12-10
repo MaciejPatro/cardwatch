@@ -191,10 +191,96 @@ def calculate_card_stats(session, card):
 @app.route("/cardwatch/singles")
 @app.route("/cardwatch/singles/")
 def singles():
+    return render_template("singles.html")
+
+
+@app.route("/cardwatch/singles/delete/<int:cid>", methods=["POST"])
+def delete_single(cid):
     with get_db_session() as s:
-        cards = s.query(SingleCard).order_by(SingleCard.name).all()
-        model = [calculate_card_stats(s, c) for c in cards]
-        return render_template("singles.html", cards=model)
+        card = s.get(SingleCard, cid)
+        if not card:
+            return jsonify({"success": False, "error": "Not found"}), 404
+        
+        # Delete image if exists
+        if card.image_url:
+             # Handle both full absolute path and relative path cases if needed
+             # Logic in save_uploaded_image returns relative path from MEDIA_ROOT
+             try:
+                 # Check if it's a local file relative to MEDIA_ROOT
+                 full_path = os.path.join(app.config['MEDIA_ROOT'], card.image_url)
+                 if os.path.exists(full_path):
+                     os.remove(full_path)
+             except OSError as e:
+                 print(f"Error deleting image {full_path}: {e}")
+
+        s.delete(card)
+        s.commit()
+        return jsonify({"success": True})
+
+
+@app.route("/cardwatch/api/singles/list")
+def api_singles_list():
+    offset = int(request.args.get("offset", 0))
+    limit = int(request.args.get("limit", 10))
+    search = request.args.get("search", "").strip()
+    sort_field = request.args.get("sort", "name")
+    sort_order = request.args.get("order", "asc")
+
+    with get_db_session() as s:
+        query = s.query(SingleCard)
+
+        # Search
+        if search:
+            query = query.filter(SingleCard.name.ilike(f"%{search}%"))
+
+        # Sorting
+        if sort_field == "name":
+            col = SingleCard.name
+            query = query.order_by(col.asc() if sort_order == "asc" else col.desc())
+        elif sort_field == "language":
+            col = SingleCard.language
+            query = query.order_by(col.asc() if sort_order == "asc" else col.desc())
+        elif sort_field == "current":
+             # Sort by current low price. Needs join/subquery logic.
+             # Joining with SingleCardPrice might produce duplicates if multiple prices exist.
+             # Strategy: subquery for latest price ID
+             latest_price_sub = (
+                s.query(SingleCardPrice.id)
+                .filter(SingleCardPrice.card_id == SingleCard.id)
+                .order_by(SingleCardPrice.ts.desc())
+                .limit(1)
+                .scalar_subquery()
+             )
+             # Optimization: This scalar subquery in order_by might be slow for large datasets.
+             # Alternatively, just join SingleCardPrice and select distinct?
+             # Let's try simple join on latest price via lateral or just a join which might imply multiple rows if not careful.
+             
+             # Actually, simpler: subquery to get (card_id, low) for latest ts
+             from sqlalchemy import text
+             # Using a correlated subquery for sort
+             subq = (
+                 s.query(SingleCardPrice.low)
+                 .filter(SingleCardPrice.card_id == SingleCard.id)
+                 .order_by(SingleCardPrice.ts.desc())
+                 .limit(1)
+                 .scalar_subquery()
+             )
+             query = query.order_by(subq.asc() if sort_order == "asc" else subq.desc())
+        else:
+            # Default fallback sort
+            query = query.order_by(SingleCard.name.asc())
+
+        total = query.count()
+        cards = query.offset(offset).limit(limit).all()
+
+        rows = []
+        for c in cards:
+            stats = calculate_card_stats(s, c)
+            # Flatten stats into row structure expected by table
+            rows.append(stats)
+
+        return jsonify({"total": total, "rows": rows})
+
 
 
 @app.route("/cardwatch/single/<int:cid>")

@@ -27,128 +27,97 @@
     </form>
 </section>
 
-<table id="singleTable" class="table table-striped align-middle" data-toggle="table">
+<table id="singleTable" class="table table-striped align-middle" data-toggle="table"
+    data-url="{{ url_for('api_singles_list') }}" data-side-pagination="server" data-pagination="true"
+    data-page-list="[10, 25, 50, 100]" data-search="true">
     <thead class="table-light">
         <tr>
-            <th data-field="image">Image</th>
-            <th data-field="name" data-sortable="true">Name</th>
+            <th data-field="image_url" data-formatter="imageFormatter">Image</th>
+            <th data-field="name" data-sortable="true" data-formatter="nameFormatter">Name</th>
             <th data-field="language" data-sortable="true">Language</th>
-            <th data-field="current" data-sortable="true" data-sorter="priceSorter">Current €</th>
-            <th data-field="from" data-sortable="true" data-sorter="priceSorter">From €</th>
-            <th data-field="trend_value" data-sortable="true" data-sorter="priceSorter">Price trend €</th>
-            <th data-field="avg7" data-sortable="true" data-sorter="priceSorter">7-day avg €</th>
-            <th data-field="avg1" data-sortable="true" data-sorter="priceSorter">1-day avg €</th>
-            <th data-field="pct30" data-sortable="true" data-sorter="priceSorter">30d %</th>
-            <th data-field="pct90" data-sortable="true" data-sorter="priceSorter">90d %</th>
-            <th data-field="pct_all" data-sortable="true" data-sorter="priceSorter">All-time %</th>
-            <th data-field="trend" data-sortable="true">Trend</th>
-            <th data-field="last_update" data-sortable="true" data-sorter="minuteDateSorter">Last update</th>
+            <th data-field="current_low" data-sortable="true" data-field-name="current" data-formatter="priceFormatter">
+                Current €</th>
+            <th data-field="from_price" data-formatter="priceFormatter">From €</th>
+            <th data-field="price_trend" data-formatter="priceFormatter">Price trend €</th>
+            <th data-field="avg7_price" data-formatter="priceFormatter">7-day avg €</th>
+            <th data-field="avg1_price" data-formatter="priceFormatter">1-day avg €</th>
+            <th data-field="pct30" data-formatter="pctFormatter">30d %</th>
+            <th data-field="pct90" data-formatter="pctFormatter">90d %</th>
+            <th data-field="pct_all" data-formatter="pctFormatter">All-time %</th>
+            <th data-field="trend" data-formatter="trendFormatter">Trend</th>
+            <th data-field="last_ts">Last update</th>
+            <th data-field="actions" data-formatter="actionFormatter">Actions</th>
         </tr>
     </thead>
-    <tbody>
-        {% for c in cards %}
-        <tr data-href="{{ url_for('single_card', cid=c.id) }}">
-            <td>
-                {% if c.image_url %}
-                {% set is_link = c.image_url.startswith('http') %}
-                {% set src = c.image_url if is_link else url_for('tracker.media', filename=c.image_url) %}
-                <img src="{{ src }}" alt="{{ c.name }}" class="card-thumb img-thumbnail">
-                {% else %}
-                —
-                {% endif %}
-            </td>
-            <td>
-                <div class="fw-semibold">{{ c.name }}</div>
-                <a href="{{ c.url }}" target="_blank" rel="noreferrer">Cardmarket</a>
-            </td>
-            <td>{{ c.language }}</td>
-            <td>{{ '€%.2f'|format(c.current_low) if c.current_low is not none else '—' }}</td>
-            <td>{{ '€%.2f'|format(c.from_price) if c.from_price is not none else '—' }}</td>
-            <td>{{ '€%.2f'|format(c.price_trend) if c.price_trend is not none else '—' }}</td>
-            <td>{{ '€%.2f'|format(c.avg7_price) if c.avg7_price is not none else '—' }}</td>
-            <td>{{ '€%.2f'|format(c.avg1_price) if c.avg1_price is not none else '—' }}</td>
-            <td>
-                {% if c.pct30 is not none %}
-                {% set cls = 'text-success' if c.pct30 > 0 else ('text-danger' if c.pct30 < 0 else 'text-muted' ) %}
-                    <span class="{{ cls }}">{{ '%.2f'|format(c.pct30) }}%</span>
-                    {% else %}—{% endif %}
-            </td>
-            <td>
-                {% if c.pct90 is not none %}
-                {% set cls = 'text-success' if c.pct90 > 0 else ('text-danger' if c.pct90 < 0 else 'text-muted' ) %}
-                    <span class="{{ cls }}">{{ '%.2f'|format(c.pct90) }}%</span>
-                    {% else %}—{% endif %}
-            </td>
-            <td>
-                {% if c.pct_all is not none %}
-                {% set cls = 'text-success' if c.pct_all > 0 else ('text-danger' if c.pct_all < 0 else 'text-muted' ) %}
-                    <span class="{{ cls }}">{{ '%.2f'|format(c.pct_all) }}%</span>
-                    {% else %}—{% endif %}
-            </td>
-            <td class="trend {{ c.trend }}">{{ c.trend }}</td>
-            <td>{{ c.last_ts or '—' }}</td>
-        </tr>
-        {% endfor %}
-    </tbody>
 </table>
 {% endblock %}
 
 {% block extra_scripts %}
 <script>
-    function priceSorter(a, b) {
-        const toNum = (s) => {
-            if (s == null) return NaN;
-            if (typeof s === 'object') {
-                if ('textContent' in s) {
-                    s = s.textContent;
-                } else if (typeof s.text === 'function') {
-                    s = s.text();
-                } else {
-                    s = String(s);
-                }
-            } else {
-                s = String(s);
-            }
-            s = s.replace(/[\u2212\u2012\u2013\u2014\u2015]/g, '-');
-            s = s.replace(/[^\d,.\-]/g, '').replace(/\s+/g, '');
-            if (s.includes(',') && s.includes('.')) s = s.replace(/\./g, '').replace(',', '.');
-            else if (s.includes(',')) s = s.replace(',', '.');
-            return parseFloat(s);
-        };
-        const x = toNum(a), y = toNum(b);
-        if (isNaN(x) && isNaN(y)) return 0;
-        if (isNaN(x)) return 1;
-        if (isNaN(y)) return -1;
-        return x - y;
+    function imageFormatter(value, row) {
+        if (!value) return '—';
+        let src = value;
+        if (!value.startsWith('http')) {
+            // Assuming value is relative path like 'single_card_images/...'
+            // We need to construct the URL. 
+            // url_for in JS is tricky. Let's hardcode the prefix or use a data-attribute for media root if possible, 
+            // or assume standard route /tracker/media/
+            src = "/tracker/media/" + value;
+        }
+        return `<img src="${src}" alt="${row.name}" class="card-thumb img-thumbnail" style="max-height: 50px;">`;
     }
 
-    function minuteDateSorter(a, b) {
-        const toTs = s => {
-            if (!s) return 0;
-            if (typeof s === 'object') {
-                if ('textContent' in s) {
-                    s = s.textContent;
-                } else if (typeof s.text === 'function') {
-                    s = s.text();
-                } else {
-                    s = String(s);
-                }
-            } else {
-                s = String(s);
-            }
-            const t = Date.parse(s.trim().replace(' ', 'T') + ':00');
-            return isNaN(t) ? 0 : t;
-        };
-        return toTs(a) - toTs(b);
+    function nameFormatter(value, row) {
+        // Construct Link
+        // Using string concatenation for the URL since dynamic url_for in client-side JS needs base.
+        const url = `/cardwatch/single/${row.id}`;
+        return `
+            <div class="fw-semibold">${value}</div>
+            <a href="${row.url}" target="_blank" rel="noreferrer">Cardmarket</a>
+            <div class="small"><a href="${url}">Details</a></div>
+        `;
     }
 
-    $(function () {
-        $('#singleTable').bootstrapTable();
-        $('#singleTable tbody').on('click', 'tr', function (e) {
-            if ($(e.target).closest('a, button').length) return;
-            const href = $(this).data('href');
-            if (href) window.location = href;
-        });
-    });
+    function priceFormatter(value) {
+        if (value === null || value === undefined) return '—';
+        return '€' + parseFloat(value).toFixed(2);
+    }
+
+    function pctFormatter(value) {
+        if (value === null || value === undefined) return '—';
+        const num = parseFloat(value);
+        const cls = num > 0 ? 'text-success' : (num < 0 ? 'text-danger' : 'text-muted');
+        return `<span class="${cls}">${num.toFixed(2)}%</span>`;
+    }
+
+    function trendFormatter(value) {
+        return `<span class="trend ${value}">${value || ''}</span>`;
+    }
+
+    function actionFormatter(value, row) {
+        return `<button class="btn btn-sm btn-outline-danger" onclick="deleteCard(${row.id})">Delete</button>`;
+    }
+
+    function deleteCard(id) {
+        if (!confirm('Are you sure you want to delete this card?')) return;
+
+        fetch(`/cardwatch/singles/delete/${id}`, {
+            method: 'POST'
+        })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    $('#singleTable').bootstrapTable('refresh');
+                } else {
+                    alert('Error deleting card');
+                }
+            })
+            .catch(err => {
+                console.error(err);
+                alert('Error deleting card');
+            });
+    }
+
+    /* Old sorters removed as server side sorting is now used */
 </script>
 {% endblock %}
