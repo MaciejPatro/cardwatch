@@ -68,7 +68,7 @@ table.list td {
 }
 
 .card-thumb {
-    width: 64px;
-    height: 64px;
+    width: 100px;
+    height: auto;
     object-fit: contain;
 }

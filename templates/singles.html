@@ -27,15 +27,46 @@
     </form>
 </section>
 
+<div id="toolbar" class="d-flex gap-2 align-items-center flex-wrap">
+    <div class="btn-group btn-group-sm" role="group">
+        <button type="button" class="btn btn-outline-primary" onclick="applyPreset('liked')">Liked</button>
+        <button type="button" class="btn btn-outline-secondary" onclick="applyPreset('boosters')">Boosters</button>
+        <button type="button" class="btn btn-outline-success" onclick="applyPreset('medium')">Medium (€50-150)</button>
+        <button type="button" class="btn btn-outline-dark" onclick="applyPreset('reset')">Reset</button>
+    </div>
+    <div class="input-group input-group-sm" style="width: 200px;">
+        <span class="input-group-text">Price €</span>
+        <input type="number" class="form-control" id="minPriceInput" placeholder="Min">
+        <input type="number" class="form-control" id="maxPriceInput" placeholder="Max">
+    </div>
+    <select class="form-select form-select-sm" id="languageFilter" style="width: 120px;">
+        <option value="">All Languages</option>
+        <option value="English">English</option>
+        <option value="Japanese">Japanese</option>
+        <option value="Chinese">Chinese</option>
+    </select>
+    <select class="form-select form-select-sm" id="categoryFilter" style="width: 150px;">
+        <option value="">All Categories</option>
+        <option value="None">Uncategorized</option>
+        <option value="Booster Box">Booster Box</option>
+        <option value="Pack">Pack</option>
+        <option value="Don">Don</option>
+        <option value="Liked">Liked</option>
+        <option value="Ignore">Ignore</option>
+    </select>
+</div>
+
 <table id="singleTable" class="table table-striped align-middle" data-toggle="table"
     data-url="{{ url_for('api_singles_list') }}" data-side-pagination="server" data-pagination="true"
-    data-page-list="[10, 25, 50, 100, 200]" data-page-size="100" data-search="true" data-row-attributes="rowAttributes">
+    data-page-list="[10, 25, 50, 100, 200]" data-page-size="100" data-search="true" data-row-attributes="rowAttributes"
+    data-row-style="rowStyle" data-toolbar="#toolbar" data-query-params="queryParams">
     <thead class="table-light">
         <tr>
-            <th data-field="image_url" data-formatter="imageFormatter">Image</th>
+            <th data-field="image_url" data-formatter="imageFormatter" data-width="120">Image</th>
             <th data-field="name" data-sortable="true" data-formatter="nameFormatter">Name</th>
+            <th data-field="category" data-formatter="categoryFormatter">Category</th>
             <th data-field="language" data-sortable="true">Language</th>
-            <th data-field="current_low" data-sortable="true" data-field-name="current" data-formatter="priceFormatter">
+            <th data-field="current_low" data-sortable="true" data-sort-name="current" data-formatter="priceFormatter">
                 Current €</th>
             <th data-field="from_price" data-formatter="priceFormatter">From €</th>
             <th data-field="supply" data-sortable="true">Items</th>
@@ -55,6 +86,44 @@
 
 {% block extra_scripts %}
 <script>
+    function rowStyle(row, index) {
+        if (row.category === 'Liked') {
+            return {
+                classes: 'table-warning' // Using bootstrap warning class (yellowish) for highlighting
+            };
+        }
+        return {};
+    }
+
+    function applyPreset(type) {
+        // Reset all first
+        $('#minPriceInput').val('');
+        $('#maxPriceInput').val('');
+        $('#categoryFilter').val('');
+
+        if (type === 'liked') {
+            $('#categoryFilter').val('Liked');
+        } else if (type === 'boosters') {
+            $('#categoryFilter').val('Booster Box');
+        } else if (type === 'medium') {
+            $('#minPriceInput').val(50);
+            $('#maxPriceInput').val(150);
+        } else if (type === 'reset') {
+            // Already reset above
+        }
+
+        // Refresh table
+        $('#singleTable').bootstrapTable('refresh');
+    }
+
+    function queryParams(params) {
+        params.min_price = $('#minPriceInput').val();
+        params.max_price = $('#maxPriceInput').val();
+        params.category = $('#categoryFilter').val();
+        params.language = $('#languageFilter').val();
+        return params;
+    }
+
     function rowAttributes(row, index) {
         return {
             'data-href': `/cardwatch/single/${row.id}`
@@ -65,22 +134,46 @@
         if (!value) return '—';
         let src = value;
         if (!value.startsWith('http')) {
-            // Assuming value is relative path like 'single_card_images/...'
-            // We need to construct the URL. 
-            // url_for in JS is tricky. Let's hardcode the prefix or use a data-attribute for media root if possible, 
-            // or assume standard route /tracker/media/
             src = "/tracker/media/" + value;
         }
-        return `<img src="${src}" alt="${row.name}" class="card-thumb img-thumbnail" style="max-height: 50px;">`;
+        return `<img src="${src}" alt="${row.name}" class="card-thumb img-thumbnail" style="width: 100px !important; height: auto;">`;
+    }
+
+    function categoryFormatter(value, row) {
+        const categories = ["", "Booster Box", "Pack", "Don", "Liked", "Ignore"];
+        let options = categories.map(cat => {
+            const selected = (cat === (value || "")) ? "selected" : "";
+            // Display empty as select placeholder or blank
+            const label = cat === "" ? "" : cat;
+            return `<option value="${cat}" ${selected}>${label}</option>`;
+        }).join('');
+
+        return `<select class="form-select form-select-sm category-select" onchange="changeCategory(${row.id}, this.value)" onclick="event.stopPropagation();">
+            ${options}
+        </select>`;
+    }
+
+    function changeCategory(id, newValue) {
+        fetch(`/cardwatch/single/${id}/category`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ category: newValue }),
+        })
+            .then(response => response.json())
+            .then(data => {
+                if (!data.success) {
+                    alert('Error updating category');
+                }
+            });
     }
 
     function nameFormatter(value, row) {
-        // Construct Link
-        // Using string concatenation for the URL since dynamic url_for in client-side JS needs base.
         const url = `/cardwatch/single/${row.id}`;
         return `
             <div class="fw-semibold">${value}</div>
-            <a href="${row.url}" target="_blank" rel="noreferrer">Cardmarket</a>
+            <a href="${row.url}" target="_blank" rel="noreferrer" onclick="event.stopPropagation();">Cardmarket</a>
             <div class="small"><a href="${url}">Details</a></div>
         `;
     }
@@ -102,7 +195,7 @@
     }
 
     function actionFormatter(value, row) {
-        return `<button class="btn btn-sm btn-outline-danger" onclick="deleteCard(${row.id})">Delete</button>`;
+        return `<button class="btn btn-sm btn-outline-danger" onclick="deleteCard(${row.id}); event.stopPropagation();">Delete</button>`;
     }
 
     function deleteCard(id) {
@@ -125,20 +218,19 @@
             });
     }
 
-    /* Old sorters removed as server side sorting is now used */
-
     $(function () {
-        $('#singleTable').on('click-row.bs.table', function (e, row, $element, field) {
-            // Prevent navigation if clicking on link or button
-            // Note: click-row fires on row click. 
-            // We can check the event original target but it is not passed directly in all versions.
-            // Let's use the jQuery delegation which controls the target better.
-        });
-
+        // Table row click handler
         $('#singleTable tbody').on('click', 'tr', function (e) {
-            if ($(e.target).closest('a, button').length) return;
+            // Check if click originated from interactive elements
+            if ($(e.target).closest('a, button, select, input').length) return;
             const href = $(this).data('href');
             if (href) window.location = href;
+        });
+
+        // Filter event listeners
+        $('#minPriceInput, #maxPriceInput, #categoryFilter, #languageFilter').on('change keyup', function () {
+            // Debounce logic could be added here for keyup, but simple refresh for now
+            $('#singleTable').bootstrapTable('refresh');
         });
     });
 </script>

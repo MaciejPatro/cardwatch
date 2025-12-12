@@ -186,6 +186,7 @@ def calculate_card_stats(session, card):
         "supply": current_supply,
         "supply_drop": supply_drop,
         "price_outlier": price_outlier,
+        "category": card.category,
     }
 
 
@@ -193,6 +194,21 @@ def calculate_card_stats(session, card):
 @app.route("/cardwatch/singles/")
 def singles():
     return render_template("singles.html")
+
+@app.route("/cardwatch/single/<int:cid>/category", methods=["POST"])
+def update_single_category(cid):
+     data = request.json
+     new_category = data.get("category")
+     # Allow empty string to clear category
+     
+     with get_db_session() as s:
+         card = s.get(SingleCard, cid)
+         if not card:
+             return jsonify({"success": False, "error": "Not found"}), 404
+         
+         card.category = new_category
+         s.commit()
+         return jsonify({"success": True})
 
 
 @app.route("/cardwatch/singles/delete/<int:cid>", methods=["POST"])
@@ -226,6 +242,10 @@ def api_singles_list():
     search = request.args.get("search", "").strip()
     sort_field = request.args.get("sort", "name")
     sort_order = request.args.get("order", "asc")
+    category_filter = request.args.get("category", "").strip()
+    language_filter = request.args.get("language", "").strip()
+    min_price = float(request.args.get("min_price", 0)) if request.args.get("min_price") else None
+    max_price = float(request.args.get("max_price", 0)) if request.args.get("max_price") else None
 
     with get_db_session() as s:
         query = s.query(SingleCard)
@@ -233,6 +253,37 @@ def api_singles_list():
         # Search
         if search:
             query = query.filter(SingleCard.name.ilike(f"%{search}%"))
+        
+        # Language Filter
+        if language_filter and language_filter != "All":
+            query = query.filter(SingleCard.language == language_filter)
+
+        # Category Filter<bos>
+        if category_filter:
+            if category_filter == "None": # Special case for filtering empty categories
+                 query = query.filter((SingleCard.category == None) | (SingleCard.category == ""))
+            else:
+                 query = query.filter(SingleCard.category == category_filter)
+        
+        # Price Filtering Subquery
+        from sqlalchemy import text
+        
+        # Price Subquery for filtering/sorting
+        # Re-using the logic from sorting to get the latest price/supply
+        # Creating a reusable subquery factory or just defining it cleanly here
+        
+        if min_price is not None or max_price is not None:
+             price_subq = (
+                 s.query(SingleCardPrice.low)
+                 .filter(SingleCardPrice.card_id == SingleCard.id)
+                 .order_by(SingleCardPrice.ts.desc())
+                 .limit(1)
+                 .scalar_subquery()
+             )
+             if min_price is not None:
+                 query = query.filter(price_subq >= min_price)
+             if max_price is not None:
+                 query = query.filter(price_subq <= max_price)
 
         # Sorting
         if sort_field == "name":
@@ -242,25 +293,17 @@ def api_singles_list():
             col = SingleCard.language
             query = query.order_by(col.asc() if sort_order == "asc" else col.desc())
         elif sort_field == "current":
-             # Sort by current low price. Needs join/subquery logic.
-             # Joining with SingleCardPrice might produce duplicates if multiple prices exist.
-             # Strategy: subquery for latest price ID
-             latest_price_sub = (
-                s.query(SingleCardPrice.id)
-                .filter(SingleCardPrice.card_id == SingleCard.id)
-                .order_by(SingleCardPrice.ts.desc())
-                .limit(1)
-                .scalar_subquery()
-             )
-             # Optimization: This scalar subquery in order_by might be slow for large datasets.
-             # Alternatively, just join SingleCardPrice and select distinct?
-             # Let's try simple join on latest price via lateral or just a join which might imply multiple rows if not careful.
-             
-             # Actually, simpler: subquery to get (card_id, low) for latest ts
-             from sqlalchemy import text
-             # Using a correlated subquery for sort
              subq = (
                  s.query(SingleCardPrice.low)
+                 .filter(SingleCardPrice.card_id == SingleCard.id)
+                 .order_by(SingleCardPrice.ts.desc())
+                 .limit(1)
+                 .scalar_subquery()
+             )
+             query = query.order_by(subq.asc() if sort_order == "asc" else subq.desc())
+        elif sort_field == "supply":
+             subq = (
+                 s.query(SingleCardPrice.supply)
                  .filter(SingleCardPrice.card_id == SingleCard.id)
                  .order_by(SingleCardPrice.ts.desc())
                  .limit(1)

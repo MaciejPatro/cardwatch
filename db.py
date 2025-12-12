@@ -63,6 +63,7 @@ class SingleCard(Base):
     condition = Column(String, nullable=False, default="Mint or Near Mint")  # Mint or Near Mint
     image_url = Column(String, nullable=True)
     is_enabled = Column(Integer, default=1)
+    category = Column(String, nullable=True)
 
     prices = relationship(
         "SingleCardPrice", back_populates="card", cascade="all, delete-orphan"

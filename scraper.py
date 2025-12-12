@@ -211,7 +211,10 @@ async def scrape_once(product_ids=None):
             .all()
         )
         last_seen = {pid: ts for pid, ts in latest_rows if ts is not None}
+        # Sort by last_seen to prioritize "oldest update first" (resume behavior)
+        default_ts = datetime.min
         products = [p for p in products if last_seen.get(p.id, cutoff - timedelta(seconds=1)) < cutoff]
+        products.sort(key=lambda p: last_seen.get(p.id, default_ts))
 
     if not products:
         logger.info("Skipping sealed scrape: all products fetched recently")
@@ -246,7 +249,7 @@ async def scrape_once(product_ids=None):
                 logger.error(f"Error while processing {prod.name}: {e}")
             finally:
                 elapsed = time.time() - start
-                remain = max(0, 15.0 - elapsed)
+                remain = max(0, 10.0 - elapsed)
                 await asyncio.sleep(remain)
 
         await context.close()
@@ -276,7 +279,10 @@ async def scrape_single_cards(card_ids=None):
             .all()
         )
         last_seen = {cid: ts for cid, ts in latest_rows if ts is not None}
+        # Sort by last_seen to prioritize "oldest update first" (resume behavior)
+        default_ts = datetime.min
         cards = [c for c in cards if last_seen.get(c.id, cutoff - timedelta(seconds=1)) < cutoff]
+        cards.sort(key=lambda c: last_seen.get(c.id, default_ts))
 
     if not cards:
         logger.info("Skipping single-card scrape: all cards fetched recently")
@@ -333,7 +339,7 @@ async def scrape_single_cards(card_ids=None):
                 logger.error(f"Error while processing {card.name}: {e}")
             finally:
                 elapsed = time.time() - start
-                remain = max(0, 15.0 - elapsed)
+                remain = max(0, 10.0 - elapsed)
                 await asyncio.sleep(remain)
 
         await context.close()
