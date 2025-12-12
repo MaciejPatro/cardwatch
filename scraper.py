@@ -1,5 +1,5 @@
 # scraper.py
-import asyncio, re, time
+import asyncio, re, time, random
 from datetime import datetime, timedelta
 
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -15,9 +15,30 @@ from db import (
     upsert_single_daily,
 )
 from sqlalchemy import func
+from cookie_loader import parse_netscape_cookies
 import logging
+import json
+import os
 
 logger = logging.getLogger(__name__)
+
+STATUS_FILE = "scraper_status.json"
+
+def update_scraper_status(status: str, message: str):
+    """Update the scraper status file."""
+    try:
+        data = {
+            "status": status,
+            "message": message,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        # Write mostly atomic
+        temp_file = STATUS_FILE + ".tmp"
+        with open(temp_file, "w") as f:
+            json.dump(data, f)
+        os.rename(temp_file, STATUS_FILE)
+    except Exception as e:
+        logger.error(f"Failed to update scraper status: {e}")
 
 
 PRICE_RE = re.compile(r"([\d.,]+)\s*€")
@@ -179,6 +200,18 @@ async def fetch_page(context, url: str) -> str:
     resp = await page.goto(url, wait_until="networkidle", timeout=60_000)
     # sometimes anti-bot banners appear; we rely on human-like delays + Chromium
     html = await page.content()
+    
+    # Check for blocking
+    title = await page.title()
+    if title == "www.cardmarket.com" or "Just a moment" in title:
+        logger.error("Scraper blocked by Cloudflare")
+        update_scraper_status("error", "Scraper is blocked by Cloudflare (Just a moment / Redirect). Cookies need update.")
+    else:
+        # If we successfully got a product page, clear error? 
+        # Only if we are fairly sure. "Cardmarket" is generic, but product pages usually have the product name.
+        if "Cardmarket" in title and title != "www.cardmarket.com":
+             update_scraper_status("ok", "Scraper is running normally.")
+        
     await page.close()
     return html
 
@@ -222,10 +255,23 @@ async def scrape_once(product_ids=None):
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
-        context = await browser.new_context(user_agent=(
-            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-            "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-        ))
+        context = await browser.new_context(
+            user_agent="Mozilla/5.0 (X11; Linux x86_64; rv:146.0) Gecko/20100101 Firefox/146.0",
+            extra_http_headers={"Referer": "https://www.cardmarket.com/"}
+        )
+        try:
+            cookies = parse_netscape_cookies("cookies-cardmarket-com.txt")
+            cf_clearance = {
+                "name": "cf_clearance",
+                "value": "h2wrFuqEEa.5iDLkOpZPs8DAVlo5qRcvbBQ1iSyrFoQ-1765547636-1.2.1.1-Q4t2zwopbqf5jblLRLdH4uC.LjH.YpEIk4uXEfb8arzACQ9WXTQHfB39zUnjOZDJrA6CZ1PXu_WRVTKxrehSCzrxwjgSV1XziLqbBxFyhTJ9SW0Ic2IrT5Vng9QpU7ZztKPdvGwat9PjegGaePjTRDq30uhQuYc6O1UM_BrC5iqPMQ7UoobQegRUH4XxVnP6hTXPBsN.txeH35bs5hCyLAQ5wSgzlCayi4MU3uE_obg",
+                "domain": ".cardmarket.com",
+                "path": "/",
+                "secure": True
+            }
+            cookies.append(cf_clearance)
+            await context.add_cookies(cookies)
+        except Exception as e:
+            logger.error(f"Failed to load cookies: {e}")
         for prod in products:
             logger.info(f"Fetching prices for {prod.name} ({prod.country})")
             start = time.time()
@@ -249,7 +295,7 @@ async def scrape_once(product_ids=None):
                 logger.error(f"Error while processing {prod.name}: {e}")
             finally:
                 elapsed = time.time() - start
-                remain = max(0, 10.0 - elapsed)
+                remain = max(0, random.uniform(10, 20) - elapsed)
                 await asyncio.sleep(remain)
 
         await context.close()
@@ -291,11 +337,22 @@ async def scrape_single_cards(card_ids=None):
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
         context = await browser.new_context(
-            user_agent=(
-                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-                "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-            )
+            user_agent="Mozilla/5.0 (X11; Linux x86_64; rv:146.0) Gecko/20100101 Firefox/146.0",
+            extra_http_headers={"Referer": "https://www.cardmarket.com/"}
         )
+        try:
+            cookies = parse_netscape_cookies("cookies-cardmarket-com.txt")
+            cf_clearance = {
+                "name": "cf_clearance",
+                "value": "h2wrFuqEEa.5iDLkOpZPs8DAVlo5qRcvbBQ1iSyrFoQ-1765547636-1.2.1.1-Q4t2zwopbqf5jblLRLdH4uC.LjH.YpEIk4uXEfb8arzACQ9WXTQHfB39zUnjOZDJrA6CZ1PXu_WRVTKxrehSCzrxwjgSV1XziLqbBxFyhTJ9SW0Ic2IrT5Vng9QpU7ZztKPdvGwat9PjegGaePjTRDq30uhQuYc6O1UM_BrC5iqPMQ7UoobQegRUH4XxVnP6hTXPBsN.txeH35bs5hCyLAQ5wSgzlCayi4MU3uE_obg",
+                "domain": ".cardmarket.com",
+                "path": "/",
+                "secure": True
+            }
+            cookies.append(cf_clearance)
+            await context.add_cookies(cookies)
+        except Exception as e:
+            logger.error(f"Failed to load cookies: {e}")
         for card in cards:
             logger.info(
                 f"Fetching single card {card.name} ({card.language}, {card.condition})"

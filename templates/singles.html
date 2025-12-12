@@ -45,6 +45,11 @@
         <option value="Japanese">Japanese</option>
         <option value="Chinese">Chinese</option>
     </select>
+    <select class="form-select form-select-sm" id="gameFilter" style="width: 120px;">
+        <option value="">All Games</option>
+        <option value="One Piece">One Piece</option>
+        <option value="Riftbound">Riftbound</option>
+    </select>
     <select class="form-select form-select-sm" id="categoryFilter" style="width: 150px;">
         <option value="">All Categories</option>
         <option value="None">Uncategorized</option>
@@ -66,7 +71,7 @@
             <th data-field="name" data-sortable="true" data-formatter="nameFormatter">Name</th>
             <th data-field="category" data-formatter="categoryFormatter">Category</th>
             <th data-field="language" data-sortable="true">Language</th>
-            <th data-field="current_low" data-sortable="true" data-sort-name="current" data-formatter="priceFormatter">
+            <th data-field="current_low" data-sortable="true" da ta-sort-name="current" data-formatter="priceFormatter">
                 Current €</th>
             <th data-field="from_price" data-formatter="priceFormatter">From €</th>
             <th data-field="supply" data-sortable="true">Items</th>
@@ -121,6 +126,7 @@
         params.max_price = $('#maxPriceInput').val();
         params.category = $('#categoryFilter').val();
         params.language = $('#languageFilter').val();
+        params.game = $('#gameFilter').val();
         return params;
     }
 
@@ -228,7 +234,7 @@
         });
 
         // Filter event listeners
-        $('#minPriceInput, #maxPriceInput, #categoryFilter, #languageFilter').on('change keyup', function () {
+        $('#minPriceInput, #maxPriceInput, #categoryFilter, #languageFilter, #gameFilter').on('change keyup', function () {
             // Debounce logic could be added here for keyup, but simple refresh for now
             $('#singleTable').bootstrapTable('refresh');
         });

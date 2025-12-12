@@ -1,4 +1,4 @@
-# app.py
+import json
 import os
 import asyncio
 
@@ -50,6 +50,18 @@ tracker_scheduler = init_tracker_scheduler()
 def home():
     return render_template("home.html")
 
+
+@app.context_processor
+def inject_scraper_status():
+    status_file = "scraper_status.json"
+    status_data = {}
+    if os.path.exists(status_file):
+        try:
+            with open(status_file, "r") as f:
+                status_data = json.load(f)
+        except Exception:
+            pass
+    return dict(scraper_status=status_data)
 
 @app.route("/cardwatch")
 @app.route("/cardwatch/")
@@ -244,6 +256,7 @@ def api_singles_list():
     sort_order = request.args.get("order", "asc")
     category_filter = request.args.get("category", "").strip()
     language_filter = request.args.get("language", "").strip()
+    game_filter = request.args.get("game", "").strip()
     min_price = float(request.args.get("min_price", 0)) if request.args.get("min_price") else None
     max_price = float(request.args.get("max_price", 0)) if request.args.get("max_price") else None
 
@@ -254,6 +267,10 @@ def api_singles_list():
         if search:
             query = query.filter(SingleCard.name.ilike(f"%{search}%"))
         
+        # Game Filter
+        if game_filter and game_filter != "All":
+            query = query.filter(SingleCard.game == game_filter)
+
         # Language Filter
         if language_filter and language_filter != "All":
             query = query.filter(SingleCard.language == language_filter)
@@ -585,5 +602,24 @@ def delete(pid):
         flash("Deleted.")
         return redirect(url_for("index"))
 
+@app.route("/update-cookies", methods=["GET", "POST"])
+def update_cookies():
+    if request.method == "POST":
+        new_val = request.form.get("cf_clearance", "").strip()
+        if new_val:
+            try:
+                with open("cf_clearance.txt", "w") as f:
+                    f.write(new_val)
+                # Also reset the scraper status to OK tentatively
+                from scraper import update_scraper_status
+                update_scraper_status("ok", "Cookie updated by user.")
+                flash("Cookie updated successfully!", "success")
+            except Exception as e:
+                flash(f"Error saving cookie: {e}", "danger")
+        return redirect(url_for('home'))
+        
+    return render_template("update_cookies.html")
+
 if __name__ == "__main__":
-    app.run(use_reloader=False)
+    app.run(host="0.0.0.0", port=5000)
+```

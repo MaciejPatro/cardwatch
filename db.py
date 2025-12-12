@@ -64,6 +64,7 @@ class SingleCard(Base):
     image_url = Column(String, nullable=True)
     is_enabled = Column(Integer, default=1)
     category = Column(String, nullable=True)
+    game = Column(String, nullable=True, default="One Piece")
 
     prices = relationship(
         "SingleCardPrice", back_populates="card", cascade="all, delete-orphan"
