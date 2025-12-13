@@ -272,6 +272,7 @@ async def scrape_once(product_ids=None):
             await context.add_cookies(cookies)
         except Exception as e:
             logger.error(f"Failed to load cookies: {e}")
+        
         for prod in products:
             logger.info(f"Fetching prices for {prod.name} ({prod.country})")
             start = time.time()
@@ -290,16 +291,16 @@ async def scrape_once(product_ids=None):
                     logger.info(f"Stored {len(prices)} prices: low={low:.2f}, avg5={avg:.2f}, supply={supply}")
                 else:
                     logger.warning("No prices found")
-                # 15s delay between websites
             except Exception as e:
                 logger.error(f"Error while processing {prod.name}: {e}")
             finally:
                 elapsed = time.time() - start
                 remain = max(0, random.uniform(10, 20) - elapsed)
                 await asyncio.sleep(remain)
-
+        
         await context.close()
         await browser.close()
+
     logger.info(f"Scrape run finished at {datetime.utcnow():%Y-%m-%d %H:%M:%S}")
 
 
@@ -353,6 +354,7 @@ async def scrape_single_cards(card_ids=None):
             await context.add_cookies(cookies)
         except Exception as e:
             logger.error(f"Failed to load cookies: {e}")
+
         for card in cards:
             logger.info(
                 f"Fetching single card {card.name} ({card.language}, {card.condition})"
@@ -367,8 +369,6 @@ async def scrape_single_cards(card_ids=None):
                 if prices or any(v is not None for v in summary.values()):
                     # Always derive chart points from the scraped listings so the
                     # low/avg lines match the table rows shown on the website.
-                    low = min(prices) if prices else None
-                    avg = sum(prices) / len(prices) if prices else None
                     low = min(prices) if prices else None
                     avg = sum(prices) / len(prices) if prices else None
                     with get_db_session() as s:
@@ -396,7 +396,7 @@ async def scrape_single_cards(card_ids=None):
                 logger.error(f"Error while processing {card.name}: {e}")
             finally:
                 elapsed = time.time() - start
-                remain = max(0, 10.0 - elapsed)
+                remain = max(0, random.uniform(10, 20) - elapsed)
                 await asyncio.sleep(remain)
 
         await context.close()
@@ -489,13 +489,13 @@ def is_heads_up(session, product_id: int):
 
 # Hourly schedule (at most once/hour)
 def schedule_hourly():
-    logger.info("Starting hourly scheduler")
+    logger.info("Starting scheduler (every 4 hours)")
     sched = BackgroundScheduler(timezone="UTC")
-    # run once ASAP after start, then every hour
+    # run once ASAP after start, then every 4 hours
     sched.add_job(
         lambda: asyncio.run(scrape_all()),
         "interval",
-        hours=1,
+        hours=4,
         next_run_time=datetime.utcnow(),  # <- immediate first run
         max_instances=1
     )
@@ -504,4 +504,5 @@ def schedule_hourly():
 
 if __name__ == "__main__":
     import asyncio
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
     asyncio.run(scrape_once())
