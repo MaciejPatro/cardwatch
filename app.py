@@ -178,6 +178,19 @@ def calculate_card_stats(session, card):
         if current_low < avg5 * 0.7:
             price_outlier = True
 
+    # Fetch last 30 days history for sparkline
+    # Limit to reasonable number of points (e.g. latest 100) to keep table payload light
+    history_query = (
+        session.query(SingleCardPrice.low)
+        .filter(SingleCardPrice.card_id == card.id)
+        .filter(SingleCardPrice.ts >= now - timedelta(days=30))
+        .filter(SingleCardPrice.low.isnot(None))
+        .order_by(SingleCardPrice.ts.asc())
+        .all()
+    )
+    # Basic downsampling if too many points (simple skip)
+    history_values = [r.low for r in history_query]
+    
     return {
         "id": card.id,
         "name": card.name,
@@ -199,6 +212,7 @@ def calculate_card_stats(session, card):
         "supply_drop": supply_drop,
         "price_outlier": price_outlier,
         "category": card.category,
+        "history_30d": history_values,
     }
 
 
@@ -327,6 +341,30 @@ def api_singles_list():
                  .scalar_subquery()
              )
              query = query.order_by(subq.asc() if sort_order == "asc" else subq.desc())
+        elif sort_field == "pct_all":
+             # Subquery for current price (latest)
+             current_subq = (
+                 s.query(SingleCardPrice.low)
+                 .filter(SingleCardPrice.card_id == SingleCard.id)
+                 .order_by(SingleCardPrice.ts.desc())
+                 .limit(1)
+                 .scalar_subquery()
+             )
+             # Subquery for first price (oldest with non-null low)
+             first_subq = (
+                 s.query(SingleCardPrice.low)
+                 .filter(SingleCardPrice.card_id == SingleCard.id)
+                 .filter(SingleCardPrice.low.isnot(None))
+                 .order_by(SingleCardPrice.ts.asc())
+                 .limit(1)
+                 .scalar_subquery()
+             )
+             
+             # (current - first) / first
+             # Handle division by zero or nulls gracefully if needed, though SQL comparison rules might handle nulls
+             diff = (current_subq - first_subq) / first_subq
+             
+             query = query.order_by(diff.asc() if sort_order == "asc" else diff.desc())
         else:
             # Default fallback sort
             query = query.order_by(SingleCard.name.asc())

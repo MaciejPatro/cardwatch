@@ -70,48 +70,65 @@ def parse_supply(html: str):
 
 def parse_prices_for_country(html: str, country_name: str):
     """
-    Returns up to 5 lowest euro prices for rows whose location tooltip says the given country.
-    Uses provided DOM hints; robust to minor layout changes by querying by classes and spans.
+    Returns up to 5 lowest euro prices.
+    Strategy:
+    1. Try to find prices from the specific `country_name`.
+    2. If none found, fallback to ALL countries and return the cheapest.
     """
     soup = BeautifulSoup(html, "lxml")
     table = soup.select_one("div.table.article-table.table-striped")
     if not table:
+        # Fallback for empty/blocked pages or different layouts
         return []
 
     rows = table.select("div.article-row")
-    pairs = []
+    
+    country_matches = []
+    other_matches = []
+
     for r in rows:
-        # country: aria-label="Item location: Spain" is on an icon within seller column
+        # 1. Parse Price
+        price_span = r.select_one(".col-offer .color-primary")
+        if not price_span:
+            price_span = r.select_one(".mobile-offer-container .color-primary")
+        if not price_span:
+            continue
+            
+        m = PRICE_RE.search(price_span.get_text(strip=True))
+        if not m:
+            continue
+            
+        # normalize "83,00 €" -> 83.00
+        raw = m.group(1).replace(".", "").replace(",", ".")
+        try:
+            price = float(raw)
+        except ValueError:
+            continue
+
+        # 2. Parse Country
         loc = r.select_one(".col-seller [aria-label^='Item location:']")
         loc_country = None
         if loc and loc.has_attr("aria-label"):
             lab = loc["aria-label"]
             if ":" in lab:
                 loc_country = lab.split(":", 1)[1].strip()
-        if loc_country != country_name:
-            continue
+        
+        if loc_country == country_name:
+            country_matches.append(price)
+        else:
+            other_matches.append(price)
 
-        # price lives in .col-offer -> .color-primary with euro
-        price_span = r.select_one(".col-offer .color-primary")
-        if not price_span:
-            # mobile fallback:
-            price_span = r.select_one(".mobile-offer-container .color-primary")
-        if not price_span:
-            continue
-        m = PRICE_RE.search(price_span.get_text(strip=True))
-        if not m:
-            continue
+    # Strategy: Prioritize target country, fallback to global cheapest
+    if country_matches:
+        country_matches.sort()
+        return country_matches[:5]
+    
+    if other_matches:
+        other_matches.sort()
+        # Fallback: return cheapest from any country
+        return other_matches[:5]
 
-        # normalize "83,00 €" -> 83.00
-        raw = m.group(1).replace(".", "").replace(",", ".")
-        try:
-            price = float(raw)
-            pairs.append(price)
-        except ValueError:
-            continue
-
-    pairs.sort()
-    return pairs[:5]
+    return []
 
 
 def parse_single_card_prices(html: str, language: str):
@@ -277,7 +294,13 @@ async def scrape_once(product_ids=None):
             logger.info(f"Fetching prices for {prod.name} ({prod.country})")
             start = time.time()
             try:
-                html = await fetch_page(context, prod.url)
+                # Add language filter for sealed English products to avoid French/Italian items
+                target_url = prod.url
+                if "japanese" not in prod.name.lower() and " jp" not in prod.name.lower():
+                    sep = "&" if "?" in target_url else "?"
+                    target_url += f"{sep}language=1"
+
+                html = await fetch_page(context, target_url)
                 prices = parse_prices_for_country(html, prod.country)
                 supply = parse_supply(html)
                 if prices:
@@ -309,7 +332,11 @@ async def scrape_single_cards(card_ids=None):
     logger.info(f"Starting single-card scrape at {datetime.utcnow():%Y-%m-%d %H:%M:%S}")
 
     with get_db_session() as session:
-        q = session.query(SingleCard).filter_by(is_enabled=1)
+        # Filter enabled cards AND exclude those categorized as "Ignore" or "Don"
+        q = session.query(SingleCard).filter(
+            SingleCard.is_enabled == 1,
+            (SingleCard.category.notin_(["Ignore", "Don"])) | (SingleCard.category.is_(None))
+        )
         if card_ids:
             q = q.filter(SingleCard.id.in_(card_ids))
         cards = q.all()
@@ -361,7 +388,13 @@ async def scrape_single_cards(card_ids=None):
             )
             start = time.time()
             try:
-                html = await fetch_page(context, card.url)
+                # Add language filter param for better pre-filtering
+                target_url = card.url
+                if card.language == "English":
+                    sep = "&" if "?" in target_url else "?"
+                    target_url += f"{sep}language=1"
+
+                html = await fetch_page(context, target_url)
                 prices = parse_single_card_prices(html, card.language)
                 summary = parse_single_card_summary(html)
                 supply = parse_supply(html)
@@ -488,21 +521,48 @@ def is_heads_up(session, product_id: int):
     return latest.low <= 0.90 * float(avg7), latest.low, float(avg7)
 
 # Hourly schedule (at most once/hour)
+# Dynamically schedule next run after completion
+def run_and_reschedule(scheduler):
+    try:
+        logger.info("Starting scheduled scrape...")
+        asyncio.run(scrape_all())
+    except Exception as e:
+        logger.error(f"Scrape job failed: {e}")
+    finally:
+        # Schedule next run 4 hours from NOW (completion time)
+        next_run = datetime.utcnow() + timedelta(hours=4)
+        logger.info(f"Scrape finished. Next run scheduled for {next_run} UTC")
+        scheduler.add_job(
+            lambda: run_and_reschedule(scheduler),
+            "date",
+            run_date=next_run
+        )
+
+# Fixed delay schedule (Wait 4h AFTER finish)
 def schedule_hourly():
-    logger.info("Starting scheduler (every 4 hours)")
+    logger.info("Starting scheduler (dynamic 4h delay after finish)")
     sched = BackgroundScheduler(timezone="UTC")
-    # run once ASAP after start, then every 4 hours
+    
+    # Start the first job immediately
     sched.add_job(
-        lambda: asyncio.run(scrape_all()),
-        "interval",
-        hours=4,
-        next_run_time=datetime.utcnow(),  # <- immediate first run
-        max_instances=1
+        lambda: run_and_reschedule(sched),
+        "date",
+        run_date=datetime.utcnow() + timedelta(seconds=10) # small buffer
     )
+    
     sched.start()
     return sched
 
 if __name__ == "__main__":
     import asyncio
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
-    asyncio.run(scrape_once())
+    
+    # Run continuous scheduler
+    sched = schedule_hourly()
+    
+    # Keep main thread alive
+    try:
+        while True:
+            time.sleep(1)
+    except (KeyboardInterrupt, SystemExit):
+        sched.shutdown()

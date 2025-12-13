@@ -68,19 +68,21 @@
     <thead class="table-light">
         <tr>
             <th data-field="image_url" data-formatter="imageFormatter" data-width="120">Image</th>
+            <th data-field="history_30d" data-formatter="sparklineFormatter" data-width="120">Graph (30d)</th>
             <th data-field="name" data-sortable="true" data-formatter="nameFormatter">Name</th>
             <th data-field="category" data-formatter="categoryFormatter">Category</th>
-            <th data-field="language" data-sortable="true">Language</th>
+            <th data-field="language" data-sortable="true" data-formatter="languageFormatter" data-width="50"
+                class="text-center"></th>
             <th data-field="current_low" data-sortable="true" da ta-sort-name="current" data-formatter="priceFormatter">
                 Current €</th>
             <th data-field="from_price" data-formatter="priceFormatter">From €</th>
             <th data-field="supply" data-sortable="true">Items</th>
-            <th data-field="price_trend" data-formatter="priceFormatter">Price trend €</th>
-            <th data-field="avg7_price" data-formatter="priceFormatter">7-day avg €</th>
-            <th data-field="avg1_price" data-formatter="priceFormatter">1-day avg €</th>
-            <th data-field="pct30" data-formatter="pctFormatter">30d %</th>
+            <th data-field="price_trend" data-formatter="priceFormatter">Trend</th>
+            <th data-field="avg7_price" data-formatter="priceFormatter">7-day</th>
+            <th data-field="avg1_price" data-formatter="priceFormatter">1-day</th>
+            <th data-field="pct_all" data-sortable="true" data-formatter="pctFormatter">All-time %</th>
             <th data-field="pct90" data-formatter="pctFormatter">90d %</th>
-            <th data-field="pct_all" data-formatter="pctFormatter">All-time %</th>
+            <th data-field="pct30" data-formatter="pctFormatter">30d %</th>
             <th data-field="trend" data-formatter="trendFormatter">Trend</th>
             <th data-field="last_ts">Last update</th>
             <th data-field="actions" data-formatter="actionFormatter">Actions</th>
@@ -202,6 +204,50 @@
 
     function actionFormatter(value, row) {
         return `<button class="btn btn-sm btn-outline-danger" onclick="deleteCard(${row.id}); event.stopPropagation();">Delete</button>`;
+    }
+
+    function sparklineFormatter(data) {
+        if (!data || data.length < 2) return '<span class="text-muted small">No data</span>';
+
+        const width = 100;
+        const height = 40;
+        const min = Math.min(...data);
+        const max = Math.max(...data);
+        const range = max - min;
+
+        // Color based on trend (last vs first)
+        const isUp = data[data.length - 1] >= data[0];
+        const color = isUp ? '#198754' : '#dc3545'; // bootstrap success/danger
+
+        let path = '';
+        const step = width / (data.length - 1);
+
+        data.forEach((val, i) => {
+            const x = i * step;
+            // Normalize y (invert because SVG 0 is top)
+            // If range is 0 (flat line), center it
+            let y = height / 2;
+            if (range > 0) {
+                y = height - ((val - min) / range * height);
+            }
+            if (i === 0) path += `M ${x} ${y}`;
+            else path += ` L ${x} ${y}`;
+        });
+
+        return `<svg width="${width}" height="${height}" style="overflow: visible">
+            <path d="${path}" fill="none" stroke="${color}" stroke-width="2" />
+        </svg>`;
+    }
+
+    function languageFormatter(value) {
+        if (!value) return '';
+        const map = {
+            'English': '🇬🇧',
+            'Japanese': '🇯🇵',
+            'Chinese': '🇨🇳'
+        };
+        // Return flag if mapped, else first 2 letters
+        return `<span style="font-size: 1.2em;">${map[value] || value.substring(0, 2)}</span>`;
     }
 
     function deleteCard(id) {
