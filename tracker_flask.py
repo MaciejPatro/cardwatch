@@ -294,6 +294,7 @@ def calculate_monthly_tracker_stats(items):
             'sell_total': sell_total,
             'revenue': revenue,
             'not_for_sale_total': not_for_sale_total,
+            'cost_sold': cost_sold.quantize(Q, rounding=ROUND_HALF_UP),
             'roi_pct': roi_pct,
         })
 
@@ -471,6 +472,10 @@ def calculate_financials(items, monthly_stats):
     realized_pl = sum((entry['revenue'] for entry in monthly_stats), Decimal('0'))
     total_net = (realized_pl + unrealized_pl)
 
+    total_roi_pct = None
+    if sold_cost_basis > 0:
+        total_roi_pct = (realized_pl / sold_cost_basis * Decimal('100')).quantize(Q, rounding=ROUND_HALF_UP)
+
     return {
         "total_deployed": total_deployed.quantize(Q, rounding=ROUND_HALF_UP),
         "current_holdings": current_holdings.quantize(Q, rounding=ROUND_HALF_UP),
@@ -485,7 +490,8 @@ def calculate_financials(items, monthly_stats):
         "revenue": realized_pl.quantize(Q, rounding=ROUND_HALF_UP),  # Kept for compatibility
         "total_net": total_net.quantize(Q, rounding=ROUND_HALF_UP),
         "buy_total": sum((entry['buy_total'] for entry in monthly_stats), Decimal('0')).quantize(Q, rounding=ROUND_HALF_UP),
-        "sell_total": sum((entry['sell_total'] for entry in monthly_stats), Decimal('0')).quantize(Q, rounding=ROUND_HALF_UP)
+        "sell_total": sum((entry['sell_total'] for entry in monthly_stats), Decimal('0')).quantize(Q, rounding=ROUND_HALF_UP),
+        "total_roi_pct": total_roi_pct,
     }
 
 
