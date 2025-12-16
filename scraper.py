@@ -16,6 +16,7 @@ from db import (
 )
 from sqlalchemy import func
 from cookie_loader import parse_netscape_cookies
+from blocklist_manager import is_blocked
 import logging
 import json
 import os
@@ -290,7 +291,12 @@ async def scrape_once(product_ids=None):
         except Exception as e:
             logger.error(f"Failed to load cookies: {e}")
         
+
         for prod in products:
+            if is_blocked(product_id=prod.id, url=prod.url):
+                 logger.info(f"Skipping blocked product: {prod.name} (ID: {prod.id})")
+                 continue
+            
             logger.info(f"Fetching prices for {prod.name} ({prod.country})")
             start = time.time()
             try:
@@ -382,7 +388,12 @@ async def scrape_single_cards(card_ids=None):
         except Exception as e:
             logger.error(f"Failed to load cookies: {e}")
 
+
         for card in cards:
+            if is_blocked(product_id=card.product_id, url=card.url):
+                 logger.info(f"Skipping blocked card: {card.name} (ID: {card.product_id})")
+                 continue
+
             logger.info(
                 f"Fetching single card {card.name} ({card.language}, {card.condition})"
             )

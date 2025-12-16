@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8 offset-md-2">
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <h4 class="mb-0">Update Cloudflare Clearance</h4>
+            </div>
+            <div class="card-body">
+                <p>If the scraper is blocked ("Just a moment..."), you need to update the <code>cf_clearance</code>
+                    cookie.</p>
+
+                <ol>
+                    <li>Open Cardmarket in your regular browser (where it works).</li>
+                    <li>Press <strong>F12</strong> to open Developer Tools.</li>
+                    <li>Go to <strong>Application</strong> (Chrome) or <strong>Storage</strong> (Firefox) tab ->
+                        Cookies.</li>
+                    <li>Find <code>cf_clearance</code> and copy its value.</li>
+                </ol>
+
+                <form method="POST" action="{{ url_for('update_cookies') }}">
+                    <div class="mb-3">
+                        <label for="cf_clearance" class="form-label">New <code>cf_clearance</code> Value:</label>
+                        <textarea class="form-control" id="cf_clearance" name="cf_clearance" rows="3" required
+                            placeholder="Paste the long string here..."></textarea>
+                    </div>
+                    <button type="submit" class="btn btn-success">Update Cookie</button>
+                    <a href="{{ url_for('home') }}" class="btn btn-secondary">Cancel</a>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
