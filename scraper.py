@@ -132,7 +132,7 @@ def parse_prices_for_country(html: str, country_name: str):
     return []
 
 
-def parse_single_card_prices(html: str, language: str):
+def parse_single_card_prices(html: str, language: str, is_sealed: bool = False):
     """Return up to 5 lowest euro prices matching language, limiting to Mint/Near Mint.
 
     Cardmarket regularly tweaks its table wrappers; when the wrapper classes change the
@@ -148,10 +148,13 @@ def parse_single_card_prices(html: str, language: str):
     lang_norm = language.strip().lower()
     for r in rows:
         # Condition badge text such as "NM" or "M"
-        badge = r.select_one(".article-condition .badge")
-        cond = badge.get_text(strip=True).lower() if badge else None
-        if cond not in {"nm", "m"}:
-            continue
+        # Sealed items (Booster Boxes, Packs) do not have condition badges
+        if not is_sealed:
+            badge = r.select_one(".article-condition .badge")
+            cond = badge.get_text(strip=True).lower() if badge else None
+            if cond not in {"nm", "m"}:
+                continue
+        
         # Language is exposed via tooltip attributes on the flag icon
         lang_icon = r.select_one(
             ".product-attributes .icon[data-bs-original-title], .product-attributes .icon[aria-label]"
@@ -406,7 +409,13 @@ async def scrape_single_cards(card_ids=None):
                     target_url += f"{sep}language=1"
 
                 html = await fetch_page(context, target_url)
-                prices = parse_single_card_prices(html, card.language)
+                
+                # Determine if this is a sealed product (Booster Box, Pack, etc.)
+                # We skip condition checks for these.
+                cat_lower = (card.category or "").lower()
+                is_sealed = "booster" in cat_lower or "pack" in cat_lower or "display" in cat_lower
+                
+                prices = parse_single_card_prices(html, card.language, is_sealed=is_sealed)
                 summary = parse_single_card_summary(html)
                 supply = parse_supply(html)
 
