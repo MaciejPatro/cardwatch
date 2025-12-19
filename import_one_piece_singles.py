@@ -13,6 +13,7 @@ from cookie_loader import parse_netscape_cookies
 from scraper import update_scraper_status
 from db import get_db_session, SingleCard, init_db
 from blocklist_manager import is_blocked
+from tracker_utils.url_utils import clean_url
 from config import Config
 
 # Ensure DB is initialized
@@ -54,7 +55,7 @@ async def get_card_details(context, product_id, check_url_callback=None, delay=2
             if "Cardmarket" in title and title != "www.cardmarket.com":
                  update_scraper_status("ok", "Import script running normally.")
 
-        final_url = page.url
+        final_url = clean_url(page.url)
         if "Starter-Deck" in final_url or "Structure-Deck" in final_url:
              print(f"Skipping (Starter Deck URL): {final_url}")
              await page.close()
@@ -183,6 +184,7 @@ async def run_import():
     print(f"Found {len(price_guides)} items in price guide.")
 
     new_cards_processed = 0
+    query_count = 0
     
     print("Starting Playwright (Chromium)...")
     
@@ -270,10 +272,21 @@ async def run_import():
                         print(f"Updating product_id for {existing.name} to {product_id}")
                         existing.product_id = product_id
                         session.commit()
+                    
+                    # Count this as a query/processed item as requested
+                    query_count += 1
+                    if query_count > 0 and query_count % 10 == 0:
+                        print(f"Limit of 10 queries reached (Count: {query_count}). Pausing for 90 seconds...")
+                        time.sleep(90)
                     continue
                 
                 # 6. New Card
                 print(f"[NEW MATCH] ID: {product_id} | {price_type} Price: {filter_price}")
+
+                query_count += 1
+                if query_count > 0 and query_count % 10 == 0:
+                    print(f"Limit of 10 queries reached (Count: {query_count}). Pausing for 90 seconds...")
+                    time.sleep(90)
                 
                 if args.dry_run:
                     # Proceed to scrape in dry-run to verify scraping works
