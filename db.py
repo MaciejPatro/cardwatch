@@ -75,6 +75,14 @@ class SingleCard(Base):
         "SingleCardOffer", back_populates="card", cascade="all, delete-orphan"
     )
 
+    psa10_prices = relationship(
+        "PSA10Price", back_populates="card", cascade="all, delete-orphan"
+    )
+
+    psa10_offers = relationship(
+        "PSA10Offer", back_populates="card", cascade="all, delete-orphan"
+    )
+
 
 class SingleCardPrice(Base):
     __tablename__ = "single_card_prices"
@@ -135,6 +143,29 @@ class Item(Base):
     image = Column(String, nullable=True)
     not_for_sale = Column(Integer, default=0)
     category = Column(String, default="Active")
+
+
+class PSA10Price(Base):
+    __tablename__ = "psa10_prices"
+    id = Column(Integer, primary_key=True)
+    card_id = Column(Integer, ForeignKey("single_cards.id"), index=True, nullable=False)
+    ts = Column(DateTime, default=datetime.utcnow, index=True)
+    low = Column(Float, nullable=False) # Lowest PSA10 price found
+
+    card = relationship("SingleCard", back_populates="psa10_prices")
+
+
+class PSA10Offer(Base):
+    __tablename__ = "psa10_offers"
+    id = Column(Integer, primary_key=True)
+    card_id = Column(Integer, ForeignKey("single_cards.id"), index=True, nullable=False)
+    seller_name = Column(String, nullable=False)
+    price = Column(Float, nullable=False)
+    comment = Column(String, nullable=True)
+    ts = Column(DateTime, default=datetime.utcnow, index=True)
+
+    card = relationship("SingleCard", back_populates="psa10_offers")
+
 
 def init_db():
     Base.metadata.create_all(ENGINE)

@@ -14,6 +14,8 @@ from db import (
     SingleCardPrice,
     SingleCardOffer,
     SingleCardDaily,
+    PSA10Price,
+    PSA10Offer,
 )
 from scraper import (
     schedule_hourly,
@@ -23,6 +25,7 @@ from scraper import (
     scrape_once,
     scrape_single_cards,
 )
+from tracker_utils.deal_finder import calculate_deals, get_market_sentiment
 import tracker_flask
 from tracker_flask import tracker_bp, init_tracker_scheduler, save_uploaded_image
 from datetime import datetime, timedelta
@@ -45,6 +48,93 @@ if not app.config.get("CARDWATCH_DISABLE_SCHEDULER") and (
 
 app.register_blueprint(tracker_bp)
 tracker_scheduler = init_tracker_scheduler()
+
+@app.route("/tracker/deals")
+def deals():
+    # Logic for deals (omitted/existing)
+    return render_template("deals.html")
+
+@app.route("/cardwatch/psa10")
+def psa10_list():
+    return render_template("psa10_list.html")
+
+@app.route("/cardwatch/psa10/<int:cid>")
+def psa10_details(cid):
+    with get_db_session() as session:
+        card = session.query(SingleCard).get(cid)
+        if not card:
+            return "Card not found", 404
+        
+        # Get offers
+        offers = session.query(PSA10Offer).filter_by(card_id=cid).order_by(PSA10Offer.price).all()
+        
+        # Get history for chart
+        history = session.query(PSA10Price).filter_by(card_id=cid).order_by(PSA10Price.ts).all()
+        
+        chart_data = {
+            "labels": [h.ts.strftime("%Y-%m-%d") for h in history],
+            "data": [h.low for h in history]
+        }
+        
+    return render_template("psa10_details.html", card=card, offers=offers, chart_data=chart_data)
+
+@app.route("/api/psa10")
+def api_psa10_data():
+    sort = request.args.get("sort", "name")
+    order = request.args.get("order", "asc")
+    limit = int(request.args.get("limit", 100))
+    offset = int(request.args.get("offset", 0))
+    search = request.args.get("search", "").lower()
+
+    with get_db_session() as session:
+        query = session.query(SingleCard).filter(SingleCard.category == 'Liked')
+
+        if search:
+            query = query.filter(SingleCard.name.ilike(f"%{search}%"))
+
+        total = query.count()
+        cards = query.all() # Fetch all to manual sort/filter since joins are complex with aggregations
+        
+        # Manual processing to get latest prices
+        data = []
+        for c in cards:
+            # Latest PSA10
+            psa10_entry = session.query(PSA10Price).filter_by(card_id=c.id).order_by(PSA10Price.ts.desc()).first()
+            psa10_low = psa10_entry.low if psa10_entry else None
+            
+            # Latest Raw
+            raw_entry = session.query(SingleCardPrice).filter_by(card_id=c.id).order_by(SingleCardPrice.ts.desc()).first()
+            raw_low = raw_entry.low if raw_entry else None
+            
+            # PSA10 History (sparkline)
+            history = session.query(PSA10Price.low).filter_by(card_id=c.id).order_by(PSA10Price.ts.desc()).limit(30).all()
+            sparkline = [h[0] for h in history][::-1] if history else []
+
+            data.append({
+                "id": c.id,
+                "name": c.name,
+                "image_url": c.image_url,
+                "psa10_low": psa10_low,
+                "raw_low": raw_low,
+                "psa10_history": sparkline,
+                "url": c.url
+            })
+            
+        # Sorting
+        reverse = (order == "desc")
+        def sort_key(x):
+            val = x.get(sort)
+            if val is None:
+                return -999999 if reverse else 999999
+            return val
+
+        data.sort(key=sort_key, reverse=reverse)
+        
+        # Pagination
+        sliced = data[offset : offset + limit]
+
+    return jsonify({"total": total, "rows": sliced})
+
 
 @app.route("/")
 def home():
@@ -189,8 +279,24 @@ def calculate_card_stats(session, card):
         .all()
     )
     # Basic downsampling if too many points (simple skip)
+    # Basic downsampling if too many points (simple skip)
     history_values = [r.low for r in history_query]
     
+    # Sentiment Badge Logic
+    trend = compute_single_trend(session, card.id)
+    sentiment_badge = "Stagnant"
+    supply_trend_up = False
+    
+    # Check simple supply trend (current vs 7 days ago approx)
+    if current_supply is not None and past7 and past7.supply:
+        if current_supply > past7.supply * 1.05:
+            supply_trend_up = True
+
+    if trend == "up" and supply_drop:
+        sentiment_badge = "Bullish"
+    elif trend == "down" and supply_trend_up:
+        sentiment_badge = "Bearish"
+
     return {
         "id": card.id,
         "name": card.name,
@@ -198,7 +304,7 @@ def calculate_card_stats(session, card):
         "language": card.language,
         "condition": card.condition,
         "image_url": card.image_url,
-        "trend": compute_single_trend(session, card.id),
+        "trend": trend,
         "from_price": latest.from_price if latest else None,
         "price_trend": latest.price_trend if latest else None,
         "avg7_price": latest.avg7_price if latest else None,
@@ -213,13 +319,41 @@ def calculate_card_stats(session, card):
         "price_outlier": price_outlier,
         "category": card.category,
         "history_30d": history_values,
+        "sentiment_badge": sentiment_badge,
     }
 
 
 @app.route("/cardwatch/singles")
 @app.route("/cardwatch/singles/")
 def singles():
-    return render_template("singles.html")
+    with get_db_session() as s:
+        sentiment = get_market_sentiment(s)
+    return render_template("singles.html", sentiment=sentiment)
+
+
+@app.route("/cardwatch/deals")
+def deals():
+    # Parse filter params
+    # Logic: "submitted" param indicates this comes from the filter form.
+    # If submitted is present: Use strict checkbox logic (missing = False).
+    # If submitted is missing (initial load): Use defaults (English=True).
+    
+    is_submitted = request.args.get("submitted") == "true"
+    
+    if is_submitted:
+        show_promos = request.args.get("promos") == "true"
+        show_packs = request.args.get("packs") == "true"
+        english_only = request.args.get("english") == "true"
+    else:
+        # Defaults
+        show_promos = False
+        show_packs = False
+        english_only = True
+    
+    with get_db_session() as s:
+        top_deals = calculate_deals(s, include_promos=show_promos, english_only=english_only, include_packs=show_packs)
+    
+    return render_template("deals.html", deals=top_deals, show_promos=show_promos, english_only=english_only, show_packs=show_packs)
 
 @app.route("/cardwatch/single/<int:cid>/category", methods=["POST"])
 def update_single_category(cid):

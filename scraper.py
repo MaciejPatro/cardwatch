@@ -11,6 +11,7 @@ from db import (
     Price,
     SingleCard,
     SingleCardPrice,
+    SingleCardOffer,
     upsert_daily,
     upsert_single_daily,
 )
@@ -132,30 +133,29 @@ def parse_prices_for_country(html: str, country_name: str):
     return []
 
 
-def parse_single_card_prices(html: str, language: str, is_sealed: bool = False):
-    """Return up to 5 lowest euro prices matching language, limiting to Mint/Near Mint.
-
-    Cardmarket regularly tweaks its table wrappers; when the wrapper classes change the
-    parser should still locate ``div.article-row`` entries anywhere in the document so
-    we keep populating both low and avg series.
+def parse_single_card_offers(html: str, language: str, is_sealed: bool = False):
+    """Return up to 20 lowest offers with details (seller, price, country).
+    
+    Returns list of dicts: {'seller': str, 'price': float, 'country': str}
     """
     soup = BeautifulSoup(html, "lxml")
     table = soup.select_one("div.table.article-table.table-striped")
     rows = table.select("div.article-row") if table else soup.select("div.article-row")
     if not rows:
         return []
-    prices = []
+        
+    offers = []
     lang_norm = language.strip().lower()
+    
     for r in rows:
-        # Condition badge text such as "NM" or "M"
-        # Sealed items (Booster Boxes, Packs) do not have condition badges
+        # 1. Condition Check
         if not is_sealed:
             badge = r.select_one(".article-condition .badge")
             cond = badge.get_text(strip=True).lower() if badge else None
             if cond not in {"nm", "m"}:
                 continue
         
-        # Language is exposed via tooltip attributes on the flag icon
+        # 2. Language Check
         lang_icon = r.select_one(
             ".product-attributes .icon[data-bs-original-title], .product-attributes .icon[aria-label]"
         )
@@ -165,6 +165,7 @@ def parse_single_card_prices(html: str, language: str, is_sealed: bool = False):
         if not lang_text or lang_norm not in lang_text.lower():
             continue
 
+        # 3. Price
         price_span = r.select_one(".col-offer .color-primary") or r.select_one(
             ".mobile-offer-container .color-primary"
         )
@@ -173,16 +174,39 @@ def parse_single_card_prices(html: str, language: str, is_sealed: bool = False):
         m = PRICE_RE.search(price_span.get_text(strip=True))
         if not m:
             continue
-        raw = m.group(1).replace(".", "").replace(",", ".")
         try:
-            prices.append(float(raw))
+            raw_price = float(m.group(1).replace(".", "").replace(",", "."))
         except ValueError:
             continue
-        if len(prices) >= 5:
-            break
 
-    prices.sort()
-    return prices[:5]
+        # 4. Seller & Country
+        seller_name = "Unknown"
+        country = None
+        
+        # Seller name is usually in the first anchor of col-seller or just text
+        seller_elem = r.select_one(".col-seller a") or r.select_one(".col-seller")
+        if seller_elem:
+           seller_name = seller_elem.get_text(strip=True)
+           
+        # Country is often in aria-label of an icon in col-seller
+        loc_elem = r.select_one(".col-seller .icon[aria-label^='Item location']")
+        if loc_elem:
+            label = loc_elem.get("aria-label", "")
+            if ":" in label:
+                country = label.split(":", 1)[1].strip()
+
+        offers.append({
+            "seller": seller_name,
+            "price": raw_price,
+            "country": country
+        })
+
+        if len(offers) >= 20:
+             break
+
+    # Sort by price ascending
+    offers.sort(key=lambda x: x["price"])
+    return offers
 
 
 def parse_single_card_summary(html: str):
@@ -415,7 +439,9 @@ async def scrape_single_cards(card_ids=None):
                 cat_lower = (card.category or "").lower()
                 is_sealed = "booster" in cat_lower or "pack" in cat_lower or "display" in cat_lower
                 
-                prices = parse_single_card_prices(html, card.language, is_sealed=is_sealed)
+                offers = parse_single_card_offers(html, card.language, is_sealed=is_sealed)
+                prices = [o["price"] for o in offers]
+                
                 summary = parse_single_card_summary(html)
                 supply = parse_supply(html)
 
@@ -423,8 +449,12 @@ async def scrape_single_cards(card_ids=None):
                     # Always derive chart points from the scraped listings so the
                     # low/avg lines match the table rows shown on the website.
                     low = min(prices) if prices else None
-                    avg = sum(prices) / len(prices) if prices else None
+                    # Use top 5 for average consistency with old logic
+                    top5 = prices[:5]
+                    avg = sum(top5) / len(top5) if top5 else None
+                    
                     with get_db_session() as s:
+                        # 1. Save Stats History (SingleCardPrice)
                         s.add(
                             SingleCardPrice(
                                 card_id=card.id,
@@ -438,6 +468,20 @@ async def scrape_single_cards(card_ids=None):
                                 avg1_price=summary.get("avg1"),
                             )
                         )
+                        
+                        # 2. Update Offers (SingleCardOffer)
+                        # Clear old offers for this card
+                        s.query(SingleCardOffer).filter_by(card_id=card.id).delete()
+                        
+                        # Insert new offers
+                        for o in offers:
+                            s.add(SingleCardOffer(
+                                card_id=card.id,
+                                seller_name=o["seller"],
+                                price=o["price"],
+                                country=o["country"]
+                            ))
+
                         s.commit()
                         upsert_single_daily(s, card.id)
                     logger.info(

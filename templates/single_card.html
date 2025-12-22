@@ -38,6 +38,13 @@
         <div class="mb-3">
             <span class="badge bg-primary fs-6">{{ card.language }}</span>
             <span class="badge bg-secondary fs-6">{{ card.condition }}</span>
+            {% if stats.sentiment_badge == 'Bullish' %}
+            <span class="badge bg-success fs-6"><i class="bi bi-graph-up-arrow"></i> Bullish</span>
+            {% elif stats.sentiment_badge == 'Bearish' %}
+            <span class="badge bg-danger fs-6"><i class="bi bi-graph-down-arrow"></i> Bearish</span>
+            {% else %}
+            <span class="badge bg-light text-muted border fs-6">Stagnant</span>
+            {% endif %}
         </div>
 
         <p class="mb-4">
@@ -124,8 +131,8 @@
 
 <div class="card shadow-sm mb-4">
     <div class="card-body">
-        <h5 class="card-title">Daily price history</h5>
-        <p class="text-muted small">Tracks the stored daily aggregation over the full history.</p>
+        <h5 class="card-title">Daily price & supply history</h5>
+        <p class="text-muted small">Tracks prices and available quantity over time.</p>
         <canvas id="dailyChart"></canvas>
     </div>
 </div>
@@ -153,9 +160,54 @@
             data: {
                 labels: daily.map(p => p.d),
                 datasets: [
-                    { label: 'Lowest daily price', data: daily.map(p => p.low), borderColor: '#0d6efd', tension: 0.2 },
-                    { label: 'Average daily price', data: daily.map(p => p.avg), borderColor: '#198754', tension: 0.2 }
+                    {
+                        label: 'Lowest daily price',
+                        data: daily.map(p => p.low),
+                        borderColor: '#0d6efd',
+                        tension: 0.2,
+                        yAxisID: 'y'
+                    },
+                    {
+                        label: 'Average daily price',
+                        data: daily.map(p => p.avg),
+                        borderColor: '#198754',
+                        tension: 0.2,
+                        yAxisID: 'y'
+                    },
+                    {
+                        label: 'Supply',
+                        data: daily.map(p => p.supply || null),
+                        borderColor: '#ffc107',
+                        backgroundColor: 'rgba(255, 193, 7, 0.1)',
+                        fill: true,
+                        tension: 0.2,
+                        yAxisID: 'y1'
+                    }
                 ]
+            },
+            options: {
+                responsive: true,
+                interaction: {
+                    mode: 'index',
+                    intersect: false,
+                },
+                scales: {
+                    y: {
+                        type: 'linear',
+                        display: true,
+                        position: 'left',
+                        title: { display: true, text: 'Price (€)' }
+                    },
+                    y1: {
+                        type: 'linear',
+                        display: true,
+                        position: 'right',
+                        grid: {
+                            drawOnChartArea: false,
+                        },
+                        title: { display: true, text: 'Supply (Items)' }
+                    },
+                }
             }
         });
 
