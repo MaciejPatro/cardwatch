@@ -315,7 +315,12 @@ async def fetch_page(context, url: str, expand_results: bool = False, card_name:
     if expand_results:
             show_more_clicked = False
             click_count = 0
-            MAX_CLICKS = 20
+            # Limit to ~300 results (50 per load -> 6 clicks)
+            MAX_CLICKS = 6
+            
+            # Initial count
+            initial_rows = await page.locator("div.article-row").count()
+            current_rows = initial_rows
             
             while True:
                 if click_count >= MAX_CLICKS:
@@ -325,8 +330,8 @@ async def fetch_page(context, url: str, expand_results: bool = False, card_name:
 
                 load_more = page.get_by_role("button", name="Show more results")
                 if await load_more.is_visible():
-                    # Wait at least 1 second before clicking (user request)
-                    await page.wait_for_timeout(random.uniform(1000, 2000))
+                    # Wait longer before clicking (2.5 - 4.5s)
+                    await page.wait_for_timeout(random.uniform(2500, 4500))
 
                     if not await load_more.is_enabled():
                         # If visible but disabled, maybe it's loading? Wait a bit.
@@ -340,22 +345,33 @@ async def fetch_page(context, url: str, expand_results: bool = False, card_name:
                          logger.info(f"[{card_name}] Clicking 'Show more results' (merged query, click {click_count})...")
                     show_more_clicked = True
                     try:
-                        await load_more.click(timeout=5000)
+                        await load_more.click(timeout=8000)
                     except Exception:
                         try:
                             await page.evaluate("(btn) => btn.click()", await load_more.element_handle())
                         except Exception:
+                            logger.warning(f"[{card_name}] Failed to click 'Show more'. Stopping.")
                             break 
                     
-                    await page.wait_for_timeout(random.uniform(2000, 4000))
+                    # Wait longer for content to load (4 - 7s)
+                    await page.wait_for_timeout(random.uniform(4000, 7000))
                     
                     try:
                         spinner = page.locator(".spinner, .loader")
                         if await spinner.count() > 0 and await spinner.first.is_visible():
-                            # Increased timeout to 10s to assume it might be slow
-                            await spinner.first.wait_for(state="hidden", timeout=10000)
-                    except:
-                        pass
+                            # Increased timeout to 15s to assume it might be slow
+                            await spinner.first.wait_for(state="hidden", timeout=15000)
+                    except Exception as e:
+                         # If spinner wait fails, just wait a bit more
+                         await page.wait_for_timeout(2000)
+
+                    # Check if we actually got more items
+                    new_row_count = await page.locator("div.article-row").count()
+                    if new_row_count <= current_rows:
+                        logger.warning(f"[{card_name}] No new items loaded after clicking 'Show more' (Count: {new_row_count}). Stopping.")
+                        break
+                    
+                    current_rows = new_row_count
                 else:
                     break
             if card_name and show_more_clicked:
@@ -548,6 +564,10 @@ async def scrape_single_cards(card_ids=None):
             
             if is_blocked(product_id=card.product_id, url=card.url):
                  logger.info(f"Skipping blocked card: {card.name} (ID: {card.product_id})")
+                 continue
+
+            if "Don!!" in card.name:
+                 logger.info(f"Skipping Don card: {card.name}")
                  continue
 
             logger.info(

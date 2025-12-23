@@ -343,7 +343,8 @@ async def run_import():
                 elif "Pack" in details["name"]:
                     category = "Pack"
                 elif "Don!!" in details["name"]:
-                    category = "Don"
+                    print(f"Skipping (Don Card): {details['name']}")
+                    continue
 
                 # Create DB Record
                 new_card = SingleCard(
