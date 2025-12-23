@@ -101,7 +101,7 @@ def _update_cache(items):
     for item in items:
         if item.link and not item.sell_date:
             PRICECHARTING_CACHE[item.id] = fetch_pricecharting_prices(item.link)
-            time.sleep(5)
+            time.sleep(15)
         else:
             PRICECHARTING_CACHE[item.id] = {"psa10_usd": None, "ungraded_usd": None}
     global PRICECHARTING_CACHE_TS

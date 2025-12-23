@@ -14,6 +14,8 @@ from db import (
     SingleCardOffer,
     upsert_daily,
     upsert_single_daily,
+    PSA10Price,
+    PSA10Offer,
 )
 from sqlalchemy import func
 from cookie_loader import parse_netscape_cookies
@@ -232,6 +234,7 @@ def parse_single_card_summary(html: str):
             return None
 
     soup = BeautifulSoup(html, "lxml")
+    soup = BeautifulSoup(html, "lxml")
     return {
         "from_price": extract("from"),
         "price_trend": extract("price trend"),
@@ -239,10 +242,125 @@ def parse_single_card_summary(html: str):
         "avg1": extract("1-day"),
     }
 
-async def fetch_page(context, url: str) -> str:
+def process_psa10_data(session, card, html):
+    """Parse and save PSA10 offers from the expanded HTML."""
+    soup = BeautifulSoup(html, 'html.parser')
+    rows = soup.select("div.article-row")
+    
+    psa10_offers = []
+    lowest_price = None
+
+    for row in rows:
+        comment_col = row.select_one(".product-comments")
+        comment_text = comment_col.get_text(strip=True) if comment_col else ""
+        text_lower = comment_text.lower()
+        
+        if "psa10" in text_lower or "psa 10" in text_lower or "psa-10" in text_lower:
+            price_elem = row.select_one(".col-offer .color-primary") or row.select_one(".price-container .color-primary")
+            if not price_elem:
+                continue
+            
+            price_str = price_elem.get_text(strip=True).replace("€", "").replace(".", "").replace(",", ".").strip()
+            try:
+                price = float(price_str)
+            except ValueError:
+                continue
+            
+            seller_elem = row.select_one(".col-seller a") or row.select_one(".col-seller")
+            seller = seller_elem.get_text(strip=True) if seller_elem else "Unknown"
+            
+            psa10_offers.append({
+                "seller": seller,
+                "price": price,
+                "comment": comment_text
+            })
+
+            if lowest_price is None or price < lowest_price:
+                lowest_price = price
+    
+    psa10_found = len(psa10_offers) > 0
+    # We log this summary inside the main loop or here? Let's log here for clarity.
+    # But current logic has 'summary' variable in main loop printed? No, we print explicit summary line.
+    logger.info(f"[{card.name}] PSA10 Summary: Found: {'Yes' if psa10_found else 'No'} ({len(psa10_offers)} offers). Low: {lowest_price}")
+
+    if psa10_offers:
+        # Clear old offers
+        session.query(PSA10Offer).filter(PSA10Offer.card_id == card.id).delete()
+        
+        # Add new offers
+        for offer in psa10_offers:
+            db_offer = PSA10Offer(
+                card_id=card.id,
+                seller_name=offer["seller"],
+                price=offer["price"],
+                comment=offer["comment"]
+            )
+            session.add(db_offer)
+        
+        # Add Price History (if we have a low)
+        if lowest_price is not None:
+            db_price = PSA10Price(
+                card_id=card.id,
+                low=lowest_price
+            )
+            session.add(db_price)
+        session.commit()
+
+async def fetch_page(context, url: str, expand_results: bool = False, card_name: str = None) -> str:
     page = await context.new_page()
     # cardmarket often requires login to buy, but listing/prices are visible
     resp = await page.goto(url, wait_until="networkidle", timeout=60_000)
+    
+    # Handle "Show more results" if requested
+    if expand_results:
+            show_more_clicked = False
+            click_count = 0
+            MAX_CLICKS = 20
+            
+            while True:
+                if click_count >= MAX_CLICKS:
+                     if card_name:
+                          logger.warning(f"[{card_name}] Max 'Show more' clicks ({MAX_CLICKS}) reached. Stopping expansion.")
+                     break
+
+                load_more = page.get_by_role("button", name="Show more results")
+                if await load_more.is_visible():
+                    # Wait at least 1 second before clicking (user request)
+                    await page.wait_for_timeout(random.uniform(1000, 2000))
+
+                    if not await load_more.is_enabled():
+                        # If visible but disabled, maybe it's loading? Wait a bit.
+                        await page.wait_for_timeout(2000)
+                        if not await load_more.is_enabled():
+                             logger.warning(f"[{card_name}] 'Show more' button is disabled. Stopping.")
+                             break
+
+                    click_count += 1
+                    if card_name:
+                         logger.info(f"[{card_name}] Clicking 'Show more results' (merged query, click {click_count})...")
+                    show_more_clicked = True
+                    try:
+                        await load_more.click(timeout=5000)
+                    except Exception:
+                        try:
+                            await page.evaluate("(btn) => btn.click()", await load_more.element_handle())
+                        except Exception:
+                            break 
+                    
+                    await page.wait_for_timeout(random.uniform(2000, 4000))
+                    
+                    try:
+                        spinner = page.locator(".spinner, .loader")
+                        if await spinner.count() > 0 and await spinner.first.is_visible():
+                            # Increased timeout to 10s to assume it might be slow
+                            await spinner.first.wait_for(state="hidden", timeout=10000)
+                    except:
+                        pass
+                else:
+                    break
+            if card_name and show_more_clicked:
+                 logger.info(f"[{card_name}] expanded results ({click_count} clicks).")
+
     # sometimes anti-bot banners appear; we rely on human-like delays + Chromium
     html = await page.content()
     
@@ -360,6 +478,9 @@ async def scrape_once(product_ids=None):
     logger.info(f"Scrape run finished at {datetime.utcnow():%Y-%m-%d %H:%M:%S}")
 
 
+
+
+
 async def scrape_single_cards(card_ids=None):
     """Scrape single-card prices and headline stats."""
     logger.info(f"Starting single-card scrape at {datetime.utcnow():%Y-%m-%d %H:%M:%S}")
@@ -415,8 +536,16 @@ async def scrape_single_cards(card_ids=None):
         except Exception as e:
             logger.error(f"Failed to load cookies: {e}")
 
-
+        consecutive_errors = 0
+        
         for card in cards:
+            if consecutive_errors >= 3:
+                logger.error("Too many consecutive errors (likely blocked). Cooling down for 60 minutes...")
+                await asyncio.sleep(3600)
+                consecutive_errors = 0 # Reset after cooling down, or should we break? Let's reset and try one more time or just continue slowly.
+                # Actually, maybe better to just break this run?
+                # But looking at requirements, 'paused' is better.
+            
             if is_blocked(product_id=card.product_id, url=card.url):
                  logger.info(f"Skipping blocked card: {card.name} (ID: {card.product_id})")
                  continue
@@ -432,7 +561,10 @@ async def scrape_single_cards(card_ids=None):
                     sep = "&" if "?" in target_url else "?"
                     target_url += f"{sep}language=1"
 
-                html = await fetch_page(context, target_url)
+                # Check if we need to do PSA10 expansion (Merged Query)
+                is_liked = (card.category == 'Liked')
+                
+                html = await fetch_page(context, target_url, expand_results=is_liked, card_name=card.name)
                 
                 # Determine if this is a sealed product (Booster Box, Pack, etc.)
                 # We skip condition checks for these.
@@ -446,6 +578,8 @@ async def scrape_single_cards(card_ids=None):
                 supply = parse_supply(html)
 
                 if prices or any(v is not None for v in summary.values()):
+                    consecutive_errors = 0 # Success!
+                    
                     # Always derive chart points from the scraped listings so the
                     # low/avg lines match the table rows shown on the website.
                     low = min(prices) if prices else None
@@ -484,16 +618,23 @@ async def scrape_single_cards(card_ids=None):
 
                         s.commit()
                         upsert_single_daily(s, card.id)
+                        
+                        # 3. Process PSA10 if applicable (merged in same session)
+                        if is_liked:
+                             process_psa10_data(s, card, html)
+
                     logger.info(
                         f"Stored single card stats (low={low}, avg5={avg}, supply={supply})"
                     )
                 else:
                     logger.warning("No prices found for single card")
+                    consecutive_errors += 1
             except Exception as e:
                 logger.error(f"Error while processing {card.name}: {e}")
+                consecutive_errors += 1
             finally:
                 elapsed = time.time() - start
-                remain = max(0, random.uniform(10, 20) - elapsed)
+                remain = max(0, random.uniform(30, 60) - elapsed)
                 await asyncio.sleep(remain)
 
         await context.close()

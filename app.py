@@ -5,7 +5,6 @@ import asyncio
 from flask import Flask, render_template, request, redirect, url_for, jsonify, flash
 from db import (
     init_db,
-    init_db,
     get_db_session,
     Product,
     Price,
@@ -49,10 +48,7 @@ if not app.config.get("CARDWATCH_DISABLE_SCHEDULER") and (
 app.register_blueprint(tracker_bp)
 tracker_scheduler = init_tracker_scheduler()
 
-@app.route("/tracker/deals")
-def deals():
-    # Logic for deals (omitted/existing)
-    return render_template("deals.html")
+
 
 @app.route("/cardwatch/psa10")
 def psa10_list():
@@ -61,7 +57,7 @@ def psa10_list():
 @app.route("/cardwatch/psa10/<int:cid>")
 def psa10_details(cid):
     with get_db_session() as session:
-        card = session.query(SingleCard).get(cid)
+        card = session.get(SingleCard, cid)
         if not card:
             return "Card not found", 404
         
@@ -110,12 +106,18 @@ def api_psa10_data():
             history = session.query(PSA10Price.low).filter_by(card_id=c.id).order_by(PSA10Price.ts.desc()).limit(30).all()
             sparkline = [h[0] for h in history][::-1] if history else []
 
+            # Calculate Ratio
+            ratio = None
+            if psa10_low and raw_low and raw_low > 0:
+                ratio = psa10_low / raw_low
+
             data.append({
                 "id": c.id,
                 "name": c.name,
                 "image_url": c.image_url,
                 "psa10_low": psa10_low,
                 "raw_low": raw_low,
+                "ratio": ratio,
                 "psa10_history": sparkline,
                 "url": c.url
             })
