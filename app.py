@@ -336,26 +336,43 @@ def singles():
 @app.route("/cardwatch/deals")
 def deals():
     # Parse filter params
-    # Logic: "submitted" param indicates this comes from the filter form.
-    # If submitted is present: Use strict checkbox logic (missing = False).
-    # If submitted is missing (initial load): Use defaults (English=True).
-    
     is_submitted = request.args.get("submitted") == "true"
+    
+    # Pagination
+    page = int(request.args.get("page", 1))
+    per_page = 20
     
     if is_submitted:
         show_promos = request.args.get("promos") == "true"
         show_packs = request.args.get("packs") == "true"
-        english_only = request.args.get("english") == "true"
+        # Language: "English", "Japanese", "All"
+        language = request.args.get("language", "English")
     else:
         # Defaults
         show_promos = False
         show_packs = False
-        english_only = True
+        language = "English"
     
     with get_db_session() as s:
-        top_deals = calculate_deals(s, include_promos=show_promos, english_only=english_only, include_packs=show_packs)
+        # Get ALL matching deals (sorted)
+        all_deals = calculate_deals(s, include_promos=show_promos, language=language, include_packs=show_packs)
     
-    return render_template("deals.html", deals=top_deals, show_promos=show_promos, english_only=english_only, show_packs=show_packs)
+    # Pagination Logic
+    total_deals = len(all_deals)
+    total_pages = (total_deals + per_page - 1) // per_page
+    
+    # Slice
+    start = (page - 1) * per_page
+    end = start + per_page
+    paginated_deals = all_deals[start:end]
+    
+    return render_template("deals.html", 
+                           deals=paginated_deals, 
+                           show_promos=show_promos, 
+                           language=language, 
+                           show_packs=show_packs,
+                           page=page,
+                           total_pages=total_pages)
 
 @app.route("/cardwatch/single/<int:cid>/category", methods=["POST"])
 def update_single_category(cid):
