@@ -308,7 +308,40 @@ def process_psa10_data(session, card, html):
 
 async def fetch_page(context, url: str, expand_results: bool = False, card_name: str = None) -> str:
     page = await context.new_page()
-    page.on("response", lambda response: logger.warning(f"[{card_name or 'Unknown'}] Network error: {response.status} {response.url}") if response.status in [403, 429] else None)
+
+    # Data Usage Tracking
+    total_data_bytes = 0
+    async def track_data(response):
+        nonlocal total_data_bytes
+        try:
+            # Fallback: Content-Length header (fast)
+            length = int(response.headers.get('content-length', 0))
+            if length == 0:
+                # If header missing/zero (chunked/gzipped), try getting body size
+                # Note: this might slightly slow down if bodies are huge, but we blocked huge things.
+                try:
+                    body = await response.body()
+                    length = len(body)
+                except Exception:
+                    pass 
+            total_data_bytes += length
+        except Exception:
+            pass
+        
+        if response.status in [403, 429]:
+            logger.warning(f"[{card_name or 'Unknown'}] Network error: {response.status} {response.url}")
+
+    page.on("response", track_data)
+
+    # BLOCK Resource Types & Tracking to save bandwidth
+    import re
+    # Patterns for common trackers/analytics/ads
+    TRACKING_REGEX = re.compile(r"(google-analytics|googletagmanager|facebook|doubleclick|twitter|criteo|hotjar|bing|pinterest|tiktok|snapchat|linkedin|ads|analytics|tracker)", re.IGNORECASE)
+
+    await page.route("**/*", lambda route: route.abort() 
+        if route.request.resource_type in ["image", "stylesheet", "font", "media"] or TRACKING_REGEX.search(route.request.url)
+        else route.continue_()
+    )
     # cardmarket often requires login to buy, but listing/prices are visible
     resp = await page.goto(url, wait_until="networkidle", timeout=60_000)
     
@@ -392,6 +425,10 @@ async def fetch_page(context, url: str, expand_results: bool = False, card_name:
         if "Cardmarket" in title and title != "www.cardmarket.com":
              update_scraper_status("ok", "Scraper is running normally.")
         
+    kb_used = total_data_bytes / 1024
+    if card_name:
+        logger.info(f"[{card_name}] Page Size: {kb_used:.2f} KB")
+
     await page.close()
     return html
 

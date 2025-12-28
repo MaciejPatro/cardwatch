@@ -81,12 +81,16 @@ def api_psa10_data():
     limit = int(request.args.get("limit", 100))
     offset = int(request.args.get("offset", 0))
     search = request.args.get("search", "").lower()
+    language = request.args.get("language", "All")
 
     with get_db_session() as session:
         query = session.query(SingleCard).filter(SingleCard.category == 'Liked')
 
         if search:
             query = query.filter(SingleCard.name.ilike(f"%{search}%"))
+
+        if language and language != "All":
+            query = query.filter(SingleCard.language == language)
 
         total = query.count()
         cards = query.all() # Fetch all to manual sort/filter since joins are complex with aggregations
@@ -442,12 +446,16 @@ def api_singles_list():
         if language_filter and language_filter != "All":
             query = query.filter(SingleCard.language == language_filter)
 
-        # Category Filter<bos>
+        # Category Filter
         if category_filter:
             if category_filter == "None": # Special case for filtering empty categories
                  query = query.filter((SingleCard.category == None) | (SingleCard.category == ""))
             else:
                  query = query.filter(SingleCard.category == category_filter)
+        else:
+            # Default: Exclude "Ignore" category cards only when no specific category is selected
+            # logic: "All Categories" means "All visible categories" (not ignored ones)
+            query = query.filter((SingleCard.category != 'Ignore') | (SingleCard.category.is_(None)))
         
         # Price Filtering Subquery
         from sqlalchemy import text
