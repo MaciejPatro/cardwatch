@@ -3,6 +3,7 @@ import os
 import asyncio
 
 from flask import Flask, render_template, request, redirect, url_for, jsonify, flash
+from sqlalchemy import func
 from db import (
     init_db,
     get_db_session,
@@ -562,33 +563,86 @@ def single_card(cid):
 @app.route("/cardwatch/seller-bundles")
 @app.route("/cardwatch/seller-bundles/")
 def seller_bundles():
+    # Filter params
+    f_lang = request.args.get("language", "All")
+    f_country = request.args.get("country", "All")
+    try:
+        f_min_cards = int(request.args.get("min_cards", 0))
+    except (ValueError, TypeError):
+        f_min_cards = 0
+
     with get_db_session() as s:
-        offers = (
+        # Base query
+        query = (
             s.query(SingleCardOffer)
             .join(SingleCard)
             .filter(SingleCard.is_enabled == 1)
-            .all()
         )
 
+        # Apply filters
+        if f_lang != "All":
+            query = query.filter(SingleCard.language == f_lang)
+        
+        if f_country != "All":
+            query = query.filter(SingleCardOffer.country == f_country)
+
+        offers = query.all()
+
+        # Get available options for dropdowns (global, unfiltered list mainly, or filtered? usually global for filters)
+        # Actually standard UX is to show all available options
+        all_languages = [r[0] for r in s.query(SingleCard.language).distinct().order_by(SingleCard.language).all() if r[0]]
+        all_countries = [r[0] for r in s.query(SingleCardOffer.country).distinct().order_by(SingleCardOffer.country).all() if r[0]]
+
         if not offers:
-            return render_template("seller_bundles.html", sellers=[])
+            return render_template("seller_bundles.html", 
+                                   sellers=[], 
+                                   all_languages=all_languages, 
+                                   all_countries=all_countries,
+                                   f_lang=f_lang,
+                                   f_country=f_country,
+                                   f_min_cards=f_min_cards)
 
-        cards = s.query(SingleCard).filter(SingleCard.is_enabled == 1).all()
+        # For "cheapest" calculation, we should probably consider the global cheapest for that card,
+        # OR the cheapest within the filtered set?
+        # Usually "cheapest" means "market price", so global lowest is better reference.
+        # Let's fetch global cheapest for involved cards to be fair.
+        # But to avoid N+1, let's just fetch all enabled cards again or rely on what we have.
+        # Actually, let's use the query logic from before but careful about what "cheapest" means.
+        # If I filter by "Japan", do I compare against "Japan" cheapest or "Global" cheapest?
+        # The prompt says: "within 20% of the lowest price for each card."
+        # Usually that implies global lowest.
+        
+        # Implementation: Fetch ALL offers for the relevant cards to determine global lowest,
+        # THEN filter the offers we want to display.
+        # But that might be heavy. 
+        # For now, let's stick to calculating cheapest based on what we fetched, 
+        # BUT if we filter by country, "lowest price" might become "lowest price in that country".
+        # If the user wants to see if a bundle is good deal globally, comparing to local only might be misleading.
+        # However, checking "global cheapest" requires querying all offers for these cards.
+        
+        # Let's do a separate query for "global cheapest" for the cards present in our filtered offers.
+        card_ids = set(o.card_id for o in offers)
+        
+        # Get global cheapest for these cards
+        global_cheapest_rows = (
+             s.query(SingleCardOffer.card_id, func.min(SingleCardOffer.price))
+             .filter(SingleCardOffer.card_id.in_(card_ids))
+             .filter(SingleCardOffer.price.isnot(None))
+             .group_by(SingleCardOffer.card_id)
+             .all()
+        )
+        cheapest_map = {row[0]: row[1] for row in global_cheapest_rows}
+
+        cards = s.query(SingleCard).filter(SingleCard.id.in_(card_ids)).all()
         card_lookup = {c.id: c for c in cards}
-
-        cheapest = {}
-        for offer in offers:
-            if offer.price is None:
-                continue
-            prev = cheapest.get(offer.card_id)
-            if prev is None or offer.price < prev:
-                cheapest[offer.card_id] = offer.price
 
         seller_map = {}
         for offer in offers:
-            baseline = cheapest.get(offer.card_id)
+            baseline = cheapest_map.get(offer.card_id)
             if baseline is None or offer.price is None:
                 continue
+            
+            # 20% rule
             if offer.price > baseline * 1.2:
                 continue
 
@@ -618,14 +672,22 @@ def seller_bundles():
             entry["bundle_total"] += offer.price
             entry["cheapest_total"] += baseline
 
+        # Filter by min_cards
         sellers = [
-            s for s in seller_map.values() if s["total_upcharge"] <= 20.0
+            s for s in seller_map.values() 
+            if s["total_upcharge"] <= 20.0 and len(s["cards"]) >= f_min_cards
         ]
         sellers.sort(
             key=lambda s: (-len(s["cards"]), s["total_upcharge"], s["bundle_total"])
         )
 
-        return render_template("seller_bundles.html", sellers=sellers)
+        return render_template("seller_bundles.html", 
+                               sellers=sellers,
+                               all_languages=all_languages, 
+                               all_countries=all_countries,
+                               f_lang=f_lang,
+                               f_country=f_country,
+                               f_min_cards=f_min_cards)
 
 @app.route("/cardwatch/product/<int:pid>")
 def product(pid):

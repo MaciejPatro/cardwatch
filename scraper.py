@@ -523,7 +523,7 @@ async def scrape_once(product_ids=None):
                 logger.error(f"Error while processing {prod.name}: {e}")
             finally:
                 elapsed = time.time() - start
-                remain = max(0, random.uniform(10, 20) - elapsed)
+                remain = max(0, random.uniform(20, 30) - elapsed)
                 await asyncio.sleep(remain)
         
         await context.close()
@@ -622,7 +622,8 @@ async def scrape_single_cards(card_ids=None):
                 # Check if we need to do PSA10 expansion (Merged Query)
                 is_liked = (card.category == 'Liked')
                 
-                html = await fetch_page(context, target_url, expand_results=is_liked, card_name=card.name)
+                # DISABLE EXPANSION FOR NOW to avoid shadow bans
+                html = await fetch_page(context, target_url, expand_results=False, card_name=card.name)
                 
                 # Determine if this is a sealed product (Booster Box, Pack, etc.)
                 # We skip condition checks for these.
@@ -692,7 +693,7 @@ async def scrape_single_cards(card_ids=None):
                 consecutive_errors += 1
             finally:
                 elapsed = time.time() - start
-                remain = max(0, random.uniform(20, 30) - elapsed)
+                remain = max(0, random.uniform(30, 40) - elapsed)
                 await asyncio.sleep(remain)
 
         await context.close()

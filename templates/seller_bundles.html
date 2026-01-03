@@ -8,6 +8,39 @@
     </div>
 </div>
 
+<div class="card mb-4">
+    <div class="card-body py-3">
+        <form method="GET" action="{{ url_for('seller_bundles') }}" class="row g-3 align-items-end">
+            <div class="col-md-3">
+                <label for="language" class="form-label small text-muted text-uppercase fw-bold">Language</label>
+                <select class="form-select" id="language" name="language">
+                    <option value="All" {% if f_lang=='All' %}selected{% endif %}>All Languages</option>
+                    {% for lang in all_languages %}
+                    <option value="{{ lang }}" {% if f_lang==lang %}selected{% endif %}>{{ lang }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label for="country" class="form-label small text-muted text-uppercase fw-bold">Seller Country</label>
+                <select class="form-select" id="country" name="country">
+                    <option value="All" {% if f_country=='All' %}selected{% endif %}>All Countries</option>
+                    {% for c in all_countries %}
+                    <option value="{{ c }}" {% if f_country==c %}selected{% endif %}>{{ c }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label for="min_cards" class="form-label small text-muted text-uppercase fw-bold">Min Cards</label>
+                <input type="number" class="form-control" id="min_cards" name="min_cards" value="{{ f_min_cards }}"
+                    min="0">
+            </div>
+            <div class="col-md-3">
+                <button type="submit" class="btn btn-primary w-100">Apply Filters</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 {% if not sellers %}
 <div class="alert alert-info">No seller offers are available yet. Add some single-card offers to see bundle
     opportunities.</div>
