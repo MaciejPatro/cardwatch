@@ -471,9 +471,9 @@ async def scrape_once(product_ids=None):
         return
 
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
+        browser = await p.firefox.launch(headless=True)
         context = await browser.new_context(
-            user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+            user_agent="Mozilla/5.0 (X11; Linux x86_64; rv:146.0) Gecko/20100101 Firefox/146.0",
             extra_http_headers={"Referer": "https://www.cardmarket.com/"}
         )
         try:
@@ -571,9 +571,9 @@ async def scrape_single_cards(card_ids=None):
         return
 
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
+        browser = await p.firefox.launch(headless=True)
         context = await browser.new_context(
-            user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+            user_agent="Mozilla/5.0 (X11; Linux x86_64; rv:146.0) Gecko/20100101 Firefox/146.0",
             extra_http_headers={"Referer": "https://www.cardmarket.com/"}
         )
         try:
@@ -693,7 +693,7 @@ async def scrape_single_cards(card_ids=None):
                 consecutive_errors += 1
             finally:
                 elapsed = time.time() - start
-                remain = max(0, random.uniform(30, 40) - elapsed)
+                remain = max(0, random.uniform(20, 25) - elapsed)
                 await asyncio.sleep(remain)
 
         await context.close()

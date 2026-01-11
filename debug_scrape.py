@@ -24,7 +24,7 @@ async def debug_scrape():
         logger.error(f"Failed to load cookies: {e}")
 
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
+        browser = await p.firefox.launch(headless=True)
         context = await browser.new_context(
             user_agent="Mozilla/5.0 (X11; Linux x86_64; rv:146.0) Gecko/20100101 Firefox/146.0",
             extra_http_headers={"Referer": "https://www.cardmarket.com/"}
@@ -36,8 +36,15 @@ async def debug_scrape():
         page = await context.new_page()
         await page.goto(URL, wait_until="networkidle")
         
+        # Wait for potential Cloudflare challenge
+        logger.info("Waiting 5 seconds for challenges...")
+        await asyncio.sleep(5)
+        
         title = await page.title()
         logger.info(f"Page title: {title}")
+        
+        await page.screenshot(path="debug_screenshot.png")
+        logger.info("Saved screenshot to debug_screenshot.png")
         
         content = await page.content()
         with open("debug_output.html", "w") as f:
