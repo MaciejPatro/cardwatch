@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <a href="{{ url_for('psa10_list') }}" class="btn btn-outline-secondary mb-3">&larr; Back to List</a>
+        <h2>{{ card.name }} <span class="badge bg-warning text-dark">PSA 10 Analysis</span></h2>
+        <p class="text-muted"><a href="{{ card.url }}" target="_blank">View on Cardmarket</a></p>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-md-4">
+        {% if card.image_url %}
+        {% if card.image_url.startswith('http') %}
+        <img src="{{ card.image_url }}" class="img-fluid rounded shadow-sm" alt="{{ card.name }}">
+        {% else %}
+        <img src="/tracker/media/{{ card.image_url }}" class="img-fluid rounded shadow-sm" alt="{{ card.name }}">
+        {% endif %}
+        {% else %}
+        <div class="bg-light p-5 text-center text-muted">No Image</div>
+        {% endif %}
+    </div>
+    <div class="col-md-8">
+        <div class="card h-100 shadow-sm">
+            <div class="card-header bg-white">
+                <h5 class="card-title mb-0">PSA 10 Price History</h5>
+            </div>
+            <div class="card-body">
+                <canvas id="priceChart"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-12">
+        <div class="card shadow-sm">
+            <div class="card-header bg-white">
+                <h5 class="card-title mb-0">Current PSA 10 Listings</h5>
+            </div>
+            <div class="card-body p-0">
+                <table class="table table-striped table-hover mb-0">
+                    <thead>
+                        <tr>
+                            <th>Seller</th>
+                            <th>Comment</th>
+                            <th class="text-end">Price</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for offer in offers %}
+                        <tr>
+                            <td class="fw-semibold">{{ offer.seller_name }}</td>
+                            <td class="text-muted small">{{ offer.comment }}</td>
+                            <td class="text-end fw-bold text-success">€{{ "%.2f"|format(offer.price) }}</td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="3" class="text-center text-muted py-4">No currently listed PSA 10 copies found.
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    const ctx = document.getElementById('priceChart').getContext('2d');
+    const chartData = {{ chart_data| tojson }};
+
+    new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: chartData.labels,
+            datasets: [{
+                label: 'Lowest PSA 10 Price (€)',
+                data: chartData.data,
+                borderColor: '#198754',
+                backgroundColor: 'rgba(25, 135, 84, 0.1)',
+                fill: true,
+                tension: 0.2
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: false,
+                    title: {
+                        display: true,
+                        text: 'Price (€)'
+                    }
+                }
+            }
+        }
+    });
+</script>
+{% endblock %}

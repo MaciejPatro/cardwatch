@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">PSA 10 Candidates</h1>
+</div>
+
+<div class="alert alert-info" role="alert">
+    Showing only "Liked" cards. Highlighted rows indicate PSA10 Price < 2x Raw Price. </div>
+
+        <div id="toolbar">
+            <select class="form-select" id="languageFilter" style="width: auto; display: inline-block;">
+                <option value="All">All Languages</option>
+                <option value="English">English</option>
+                <option value="Japanese">Japanese</option>
+            </select>
+        </div>
+
+        <table id="psaTable" class="table table-striped align-middle" data-toggle="table" data-url="/api/psa10"
+            data-side-pagination="server" data-pagination="true" data-page-list="[10, 25, 50, 100]" data-page-size="100"
+            data-search="true" data-row-style="rowStyle" data-toolbar="#toolbar" data-query-params="queryParams">
+            <thead class="table-light">
+                <tr>
+                    <th data-field="image_url" data-formatter="imageFormatter" data-width="100">Image</th>
+                    <th data-field="psa10_history" data-formatter="sparklineFormatter" data-width="120">Graph (30d)</th>
+                    <th data-field="name" data-sortable="true" data-formatter="nameFormatter">Name</th>
+                    <th data-field="psa10_low" data-sortable="true" data-formatter="priceFormatter">PSA10 Low €</th>
+                    <th data-field="raw_low" data-sortable="true" data-formatter="priceFormatter">Raw Low €</th>
+                    <th data-field="ratio" data-sortable="true" data-formatter="ratioFormatter">Ratio</th>
+                    <th data-field="actions" data-formatter="actionFormatter">Actions</th>
+                </tr>
+            </thead>
+        </table>
+        {% endblock %}
+
+        {% block extra_scripts %}
+        <script>
+            function rowStyle(row, index) {
+                if (row.psa10_low && row.raw_low) {
+                    // "Price of PSA10 is lower than 2x times of current value"
+                    if (row.psa10_low < 2 * row.raw_low) {
+                        return {
+                            classes: 'table-success' // Greenish highlight
+                        };
+                    }
+                }
+                return {};
+            }
+
+            function imageFormatter(value, row) {
+                if (!value) return '—';
+                let src = value;
+                if (!value.startsWith('http')) {
+                    src = "/tracker/media/" + value;
+                }
+                return `<img src="${src}" alt="${row.name}" class="img-thumbnail" style="width: 80px;">`;
+            }
+
+            function nameFormatter(value, row) {
+                return `<div class="fw-semibold">${value}</div>
+                <div class="small text-muted"><a href="${row.url}" target="_blank">Cardmarket</a></div>`;
+            }
+
+            function priceFormatter(value) {
+                if (value === null || value === undefined) return '—';
+                return '€' + parseFloat(value).toFixed(2);
+            }
+
+            function ratioFormatter(value, row) {
+                if (!row.psa10_low || !row.raw_low) return '—';
+                let ratio = row.psa10_low / row.raw_low;
+                return ratio.toFixed(2) + 'x';
+            }
+
+            function actionFormatter(value, row) {
+                return `<a class="btn btn-sm btn-outline-primary" href="/cardwatch/psa10/${row.id}">Details</a>`;
+            }
+
+            function sparklineFormatter(data) {
+                if (!data || data.length < 2) return '<span class="text-muted small">No data</span>';
+
+                const width = 100;
+                const height = 40;
+                const min = Math.min(...data);
+                const max = Math.max(...data);
+                const range = max - min;
+
+                const isUp = data[data.length - 1] >= data[0];
+                const color = isUp ? '#198754' : '#dc3545';
+
+                let path = '';
+                const step = width / (data.length - 1);
+
+                data.forEach((val, i) => {
+                    const x = i * step;
+                    let y = height / 2;
+                    if (range > 0) {
+                        y = height - ((val - min) / range * height);
+                    }
+                    if (i === 0) path += `M ${x} ${y}`;
+                    else path += ` L ${x} ${y}`;
+                });
+
+                return `<svg width="${width}" height="${height}" style="overflow: visible">
+            <path d="${path}" fill="none" stroke="${color}" stroke-width="2" />
+        </svg>`;
+            }
+            function queryParams(params) {
+                params.language = $('#languageFilter').val();
+                return params;
+            }
+
+            $(function () {
+                $('#languageFilter').change(function () {
+                    $('#psaTable').bootstrapTable('refresh');
+                });
+            });
+        </script>
+        {% endblock %}
