@@ -333,15 +333,10 @@ async def fetch_page(context, url: str, expand_results: bool = False, card_name:
 
     page.on("response", track_data)
 
-    # BLOCK Resource Types & Tracking to save bandwidth
-    import re
-    # Patterns for common trackers/analytics/ads
-    TRACKING_REGEX = re.compile(r"(google-analytics|googletagmanager|facebook|doubleclick|twitter|criteo|hotjar|bing|pinterest|tiktok|snapchat|linkedin|ads|analytics|tracker)", re.IGNORECASE)
-
-    await page.route("**/*", lambda route: route.abort() 
-        if route.request.resource_type in ["image", "stylesheet", "font", "media"] or TRACKING_REGEX.search(route.request.url)
-        else route.continue_()
-    )
+    # Resource blocking removed to improve reliability and reduce blocking risks
+    # We still track data usage via the response listener above
+    
+    # cardmarket often requires login to buy, but listing/prices are visible
     # cardmarket often requires login to buy, but listing/prices are visible
     resp = await page.goto(url, wait_until="networkidle", timeout=60_000)
     
@@ -491,12 +486,13 @@ async def scrape_once(product_ids=None):
             logger.error(f"Failed to load cookies: {e}")
         
 
-        for prod in products:
+        total_products = len(products)
+        for i, prod in enumerate(products, 1):
             if is_blocked(product_id=prod.id, url=prod.url):
-                 logger.info(f"Skipping blocked product: {prod.name} (ID: {prod.id})")
+                 logger.info(f"[{i}/{total_products}] Skipping blocked product: {prod.name} (ID: {prod.id})")
                  continue
             
-            logger.info(f"Fetching prices for {prod.name} ({prod.country})")
+            logger.info(f"[{i}/{total_products}] Fetching prices for {prod.name} ({prod.country})")
             start = time.time()
             try:
                 # Add language filter for sealed English products to avoid French/Italian items
@@ -523,7 +519,7 @@ async def scrape_once(product_ids=None):
                 logger.error(f"Error while processing {prod.name}: {e}")
             finally:
                 elapsed = time.time() - start
-                remain = max(0, random.uniform(20, 30) - elapsed)
+                remain = max(0, random.uniform(10, 15) - elapsed)
                 await asyncio.sleep(remain)
         
         await context.close()
@@ -591,8 +587,9 @@ async def scrape_single_cards(card_ids=None):
             logger.error(f"Failed to load cookies: {e}")
 
         consecutive_errors = 0
+        total_cards = len(cards)
         
-        for card in cards:
+        for i, card in enumerate(cards, 1):
             if consecutive_errors >= 3:
                 logger.error("Too many consecutive errors (likely blocked). Cooling down for 60 minutes...")
                 await asyncio.sleep(3600)
@@ -601,15 +598,15 @@ async def scrape_single_cards(card_ids=None):
                 # But looking at requirements, 'paused' is better.
             
             if is_blocked(product_id=card.product_id, url=card.url):
-                 logger.info(f"Skipping blocked card: {card.name} (ID: {card.product_id})")
+                 logger.info(f"[{i}/{total_cards}] Skipping blocked card: {card.name} (ID: {card.product_id})")
                  continue
 
             if "Don!!" in card.name:
-                 logger.info(f"Skipping Don card: {card.name}")
+                 logger.info(f"[{i}/{total_cards}] Skipping Don card: {card.name}")
                  continue
 
             logger.info(
-                f"Fetching single card {card.name} ({card.language}, {card.condition})"
+                f"[{i}/{total_cards}] Fetching single card {card.name} ({card.language}, {card.condition})"
             )
             start = time.time()
             try:
@@ -686,6 +683,12 @@ async def scrape_single_cards(card_ids=None):
                         f"Stored single card stats (low={low}, avg5={avg}, supply={supply})"
                     )
                 else:
+                    if supply and supply > 0:
+                        logger.warning(
+                            f"[{card.name}] Mismatch: Found supply {supply} but extracted 0 offers. "
+                            f"HTML size: {len(html)/1024:.2f}KB. "
+                            f"Check if filters (language/condition) match available items."
+                        )
                     logger.warning("No prices found for single card")
                     consecutive_errors += 1
             except Exception as e:
