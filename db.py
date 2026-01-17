@@ -65,6 +65,7 @@ class SingleCard(Base):
     is_enabled = Column(Integer, default=1)
     category = Column(String, nullable=True)
     game = Column(String, nullable=True, default="One Piece")
+    set_name = Column(String, nullable=True)
     product_id = Column(Integer, nullable=True, unique=True, index=True)
 
     prices = relationship(

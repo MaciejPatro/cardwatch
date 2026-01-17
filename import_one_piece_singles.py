@@ -196,22 +196,6 @@ async def run_import():
         )
         try:
             cookies = parse_netscape_cookies("cookies-cardmarket-com.txt")
-            clearance_value = ""
-            try:
-                with open("cf_clearance.txt", "r") as f:
-                    clearance_value = f.read().strip()
-            except Exception:
-                pass
-
-            if clearance_value:
-                cf_clearance = {
-                    "name": "cf_clearance",
-                    "value": clearance_value,
-                    "domain": ".cardmarket.com",
-                    "path": "/",
-                    "secure": True
-                }
-                cookies.append(cf_clearance)
             await context.add_cookies(cookies)
         except Exception as e:
             print(f"Failed to load cookies: {e}")

@@ -419,6 +419,20 @@ def delete_single(cid):
         return jsonify({"success": True})
 
 
+@app.route("/cardwatch/api/singles/sets")
+def api_singles_sets():
+    with get_db_session() as s:
+        # Get distinct sets, exclude None
+        sets = [
+            r[0] for r in s.query(SingleCard.set_name)
+            .distinct()
+            .filter(SingleCard.set_name.isnot(None))
+            .order_by(SingleCard.set_name)
+            .all()
+        ]
+        return jsonify(sets)
+
+
 @app.route("/cardwatch/api/singles/list")
 def api_singles_list():
     offset = int(request.args.get("offset", 0))
@@ -429,6 +443,7 @@ def api_singles_list():
     category_filter = request.args.get("category", "").strip()
     language_filter = request.args.get("language", "").strip()
     game_filter = request.args.get("game", "").strip()
+    set_filter = request.args.get("set_name", "").strip()
     min_price = float(request.args.get("min_price", 0)) if request.args.get("min_price") else None
     max_price = float(request.args.get("max_price", 0)) if request.args.get("max_price") else None
 
@@ -442,6 +457,10 @@ def api_singles_list():
         # Game Filter
         if game_filter and game_filter != "All":
             query = query.filter(SingleCard.game == game_filter)
+
+        # Set Filter
+        if set_filter and set_filter != "All":
+            query = query.filter(SingleCard.set_name == set_filter)
 
         # Language Filter
         if language_filter and language_filter != "All":

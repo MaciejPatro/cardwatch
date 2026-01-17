@@ -409,14 +409,43 @@ async def fetch_page(context, url: str, expand_results: bool = False, card_name:
     # sometimes anti-bot banners appear; we rely on human-like delays + Chromium
     html = await page.content()
     
-    # Check for blocking
+    # Check for blocking or waiting room
     title = await page.title()
+    content_text = (await page.text_content("body")) or ""
+    
+    # Handle Cloudflare Waiting Room
+    if title == "You are now in line" or "You are now in line" in content_text:
+        logger.warning(f"Entered Cloudflare waiting room for {url}. Waiting...")
+        update_scraper_status("warning", "Scraper is in Cloudflare waiting room. Holding...")
+        
+        # Wait up to 5 minutes
+        for attempt in range(20):
+            await asyncio.sleep(15)
+            try:
+                title = await page.title()
+                content_text = (await page.text_content("body")) or ""
+                if title != "You are now in line" and "You are now in line" not in content_text:
+                    # Double check we are not just blocked
+                    if "Just a moment" in title:
+                        logger.warning("Waiting room passed but hit Cloudflare challenge.")
+                        break # Let the block handler catch it
+                    logger.info("Passed Cloudflare waiting room!")
+                    update_scraper_status("ok", "Passed waiting room, resuming scrape.")
+                    break
+                else:
+                    logger.info(f"Still in waiting room... (Attempt {attempt+1}/20)")
+                    await page.reload() # Refresh to check status
+            except Exception as e:
+                logger.error(f"Error checking status in waiting room: {e}")
+        else:
+             logger.error("Timed out in Cloudflare waiting room.")
+             update_scraper_status("error", "Stuck in Cloudflare waiting room.")
+
     if title == "www.cardmarket.com" or "Just a moment" in title:
-        logger.error("Scraper blocked by Cloudflare")
+        logger.error(f"Scraper blocked by Cloudflare (Title: '{title}'). Body snippet: {content_text[:100]}")
         update_scraper_status("error", "Scraper is blocked by Cloudflare (Just a moment / Redirect). Cookies need update.")
     else:
         # If we successfully got a product page, clear error? 
-        # Only if we are fairly sure. "Cardmarket" is generic, but product pages usually have the product name.
         if "Cardmarket" in title and title != "www.cardmarket.com":
              update_scraper_status("ok", "Scraper is running normally.")
         
@@ -473,14 +502,6 @@ async def scrape_once(product_ids=None):
         )
         try:
             cookies = parse_netscape_cookies("cookies-cardmarket-com.txt")
-            cf_clearance = {
-                "name": "cf_clearance",
-                "value": "h2wrFuqEEa.5iDLkOpZPs8DAVlo5qRcvbBQ1iSyrFoQ-1765547636-1.2.1.1-Q4t2zwopbqf5jblLRLdH4uC.LjH.YpEIk4uXEfb8arzACQ9WXTQHfB39zUnjOZDJrA6CZ1PXu_WRVTKxrehSCzrxwjgSV1XziLqbBxFyhTJ9SW0Ic2IrT5Vng9QpU7ZztKPdvGwat9PjegGaePjTRDq30uhQuYc6O1UM_BrC5iqPMQ7UoobQegRUH4XxVnP6hTXPBsN.txeH35bs5hCyLAQ5wSgzlCayi4MU3uE_obg",
-                "domain": ".cardmarket.com",
-                "path": "/",
-                "secure": True
-            }
-            cookies.append(cf_clearance)
             await context.add_cookies(cookies)
         except Exception as e:
             logger.error(f"Failed to load cookies: {e}")
@@ -498,8 +519,9 @@ async def scrape_once(product_ids=None):
                 # Add language filter for sealed English products to avoid French/Italian items
                 target_url = prod.url
                 if "japanese" not in prod.name.lower() and " jp" not in prod.name.lower():
-                    sep = "&" if "?" in target_url else "?"
-                    target_url += f"{sep}language=1"
+                    if "language=" not in target_url:
+                        sep = "&" if "?" in target_url else "?"
+                        target_url += f"{sep}language=1"
 
                 html = await fetch_page(context, target_url)
                 prices = parse_prices_for_country(html, prod.country)
@@ -612,7 +634,7 @@ async def scrape_single_cards(card_ids=None):
             try:
                 # Add language filter param for better pre-filtering
                 target_url = card.url
-                if card.language == "English":
+                if card.language == "English" and "language=" not in target_url:
                     sep = "&" if "?" in target_url else "?"
                     target_url += f"{sep}language=1"
 

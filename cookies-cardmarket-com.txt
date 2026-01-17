@@ -1,9 +1,9 @@
 # Netscape HTTP Cookie File
 
-www.cardmarket.com	FALSE	/	TRUE	1767803353.503	cm_TD	75550bbe-df4f-45c1-a58b-49b72342d65a
 www.cardmarket.com	FALSE	/	TRUE	1772987358.389	cookie_settings	preferences%3D0%2Cstatistics%3D0%2Cmarketing%3D0
 news.cardmarket.com	FALSE	/	FALSE	1796828881.903	i18n_redirected	en
 www.cardmarket.com	FALSE	/	FALSE	1797080307.381	i18n_redirected	en
-www.cardmarket.com	FALSE	/	TRUE	0	PHPSESSID	1a54n44ickstsjia301rgqr549
-.cardmarket.com	TRUE	/	TRUE	0	_cfuvid	jL_qvEfL3eztYzXwtg9EBFy6h3G8y2v2hl.7n8FAr6E-1767807659233-0.0.1.1-604800000
-.cardmarket.com	TRUE	/	TRUE	1765566904.319	__cf_bm	2aJqs7ojXxjptFE27XlZfImFlvuwM1NNTncIeAPOtBk-1767807659-1.0.1.1-cTLLNyHTGi0CrYZYx3_l632OASoVQqUm_BKYOZDqGrwuunbWeq4H6rw100y_lo1xRFpCk4ihymLWXDVBiyaO_48YI0XUqOy5A3nF1_2YsYs
+www.cardmarket.com	FALSE	/	TRUE	0	PHPSESSID	hn4gqb4o8nconqj4o1ubmm22uh
+.cardmarket.com	TRUE	/	TRUE	0	_cfuvid	jJo_fOurw_6PIqD.l4zm4NCU1K999hkPPKEuvCAd9GM-1768643258987-0.0.1.1-604800000
+.cardmarket.com	TRUE	/	TRUE	1765566904.319	__cf_bm	AfC.Io.2RKBI5IlIa1yigBM5c5UuyEB9MZzBp3HPWsA-1768643258-1.0.1.1-X__LOlV6SX_J.NhGNc_pZCfevcWmrEIQ9nmFm93S.TMY_V0Z7wtGreWYf_vf7nn.BSUK3dr_iqbaTExZ3_XbJzp8k8Cf6Nctpo0kqdipNw0
+www.cardmarket.com	FALSE	/	TRUE	0	__cfwaitingroom	ChhGN2YvdDlQZkJwWW5wcURJU2pzT3FRPT0SgAJNeHRydGFBV2NITjdJR084VHlJMTA5M0M5NmtlbXhFMXhsRU1nRmwycnI0WGRaNW9hQm14UkdnM1lyUlNtZEZrVDJmWHpybjFKU01TdkdWWXUyZ29wM0JKbmZwTmxEUlRrT01Qdmd3YkZNd2lZelA0UVBZdGYvMlo0ODZHa0daRk9pRFc1dWR1L1FDd2tQMnVvU2ZSSnRaOHNscDFkbjNJZk5KaWQyM0x5dStIbkcxdEt5U3NPWW1za0dyWWxpTW9wYmNhOWsyeUNTL1Bmc3J6NWxWbm1JMEM5MWNwUHpoZEgrREhnZmpGR3FrY2xoM0Flb2UyOUZjcld2cVpCRzFj

@@ -77,6 +77,9 @@
         <option value="One Piece">One Piece</option>
         <option value="Riftbound">Riftbound</option>
     </select>
+    <select class="form-select form-select-sm" id="setFilter" style="width: 200px;">
+        <option value="">All Sets</option>
+    </select>
     <select class="form-select form-select-sm" id="categoryFilter" style="width: 150px;">
         <option value="">All Categories</option>
         <option value="None">Uncategorized</option>
@@ -156,6 +159,7 @@
         params.category = $('#categoryFilter').val();
         params.language = $('#languageFilter').val();
         params.game = $('#gameFilter').val();
+        params.set_name = $('#setFilter').val();
         return params;
     }
 
@@ -298,6 +302,16 @@
     }
 
     $(function () {
+        // Populate Sets
+        fetch('/cardwatch/api/singles/sets')
+            .then(res => res.json())
+            .then(sets => {
+                const $select = $('#setFilter');
+                sets.forEach(set => {
+                    $select.append(new Option(set, set));
+                });
+            });
+
         // Table row click handler
         $('#singleTable tbody').on('click', 'tr', function (e) {
             // Check if click originated from interactive elements
@@ -307,7 +321,7 @@
         });
 
         // Filter event listeners
-        $('#minPriceInput, #maxPriceInput, #categoryFilter, #languageFilter, #gameFilter').on('change keyup', function () {
+        $('#minPriceInput, #maxPriceInput, #categoryFilter, #languageFilter, #gameFilter, #setFilter').on('change keyup', function () {
             // Debounce logic could be added here for keyup, but simple refresh for now
             $('#singleTable').bootstrapTable('refresh');
         });
