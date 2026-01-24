@@ -83,6 +83,17 @@
             </div>
         </div>
         <div class="col">
+            <div class="card h-100 border-warning">
+                <div class="card-body">
+                    <h6 class="text-uppercase text-muted fw-semibold" style="font-size: 0.75rem;">Total Live P&L (CHF)
+                    </h6>
+                    <div class="fs-5 fw-bold {{ 'text-success' if totals.total_live_gain_chf > 0 else 'text-danger' }}">
+                        {{ '+' if totals.total_live_gain_chf > 0 }}CHF {{ totals.total_live_gain_chf|format_float(0) }}
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col">
             <div class="card h-100 bg-light">
                 <div class="card-body">
                     <h6 class="text-uppercase text-muted fw-semibold" style="font-size: 0.75rem;">Total +/-</h6>

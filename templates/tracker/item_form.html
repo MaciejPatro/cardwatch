@@ -56,6 +56,12 @@
             value="{{ item.sell_date if item and item.sell_date else '' }}">
     </div>
     <div class="mb-3">
+        <label class="form-label">Card ID (Optional)</label>
+        <input type="number" class="form-control" name="card_id"
+            value="{{ item.card_id if item and item.card_id else '' }}">
+        <div class="form-text">Links to Single Card details for live pricing.</div>
+    </div>
+    <div class="mb-3">
         <label class="form-label">Image</label>
         <input type="file" class="form-control" name="image">
         {% if item and item.image %}

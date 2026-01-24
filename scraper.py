@@ -497,7 +497,7 @@ async def scrape_once(product_ids=None):
     async with async_playwright() as p:
         browser = await p.firefox.launch(headless=True)
         context = await browser.new_context(
-            user_agent="Mozilla/5.0 (X11; Linux x86_64; rv:146.0) Gecko/20100101 Firefox/146.0",
+            user_agent="Mozilla/5.0 (X11; Linux x86_64; rv:147.0) Gecko/20100101 Firefox/147.0",
             extra_http_headers={"Referer": "https://www.cardmarket.com/"}
         )
         try:
@@ -591,19 +591,11 @@ async def scrape_single_cards(card_ids=None):
     async with async_playwright() as p:
         browser = await p.firefox.launch(headless=True)
         context = await browser.new_context(
-            user_agent="Mozilla/5.0 (X11; Linux x86_64; rv:146.0) Gecko/20100101 Firefox/146.0",
+            user_agent="Mozilla/5.0 (X11; Linux x86_64; rv:147.0) Gecko/20100101 Firefox/147.0",
             extra_http_headers={"Referer": "https://www.cardmarket.com/"}
         )
         try:
             cookies = parse_netscape_cookies("cookies-cardmarket-com.txt")
-            cf_clearance = {
-                "name": "cf_clearance",
-                "value": "h2wrFuqEEa.5iDLkOpZPs8DAVlo5qRcvbBQ1iSyrFoQ-1765547636-1.2.1.1-Q4t2zwopbqf5jblLRLdH4uC.LjH.YpEIk4uXEfb8arzACQ9WXTQHfB39zUnjOZDJrA6CZ1PXu_WRVTKxrehSCzrxwjgSV1XziLqbBxFyhTJ9SW0Ic2IrT5Vng9QpU7ZztKPdvGwat9PjegGaePjTRDq30uhQuYc6O1UM_BrC5iqPMQ7UoobQegRUH4XxVnP6hTXPBsN.txeH35bs5hCyLAQ5wSgzlCayi4MU3uE_obg",
-                "domain": ".cardmarket.com",
-                "path": "/",
-                "secure": True
-            }
-            cookies.append(cf_clearance)
             await context.add_cookies(cookies)
         except Exception as e:
             logger.error(f"Failed to load cookies: {e}")
@@ -647,7 +639,12 @@ async def scrape_single_cards(card_ids=None):
                 # Determine if this is a sealed product (Booster Box, Pack, etc.)
                 # We skip condition checks for these.
                 cat_lower = (card.category or "").lower()
-                is_sealed = "booster" in cat_lower or "pack" in cat_lower or "display" in cat_lower
+                name_lower = card.name.lower()
+                is_sealed = (
+                    "booster" in cat_lower or "pack" in cat_lower or "display" in cat_lower or
+                    "collection" in name_lower or "box" in name_lower or "set" in name_lower or
+                    "promo" in cat_lower
+                )
                 
                 offers = parse_single_card_offers(html, card.language, is_sealed=is_sealed)
                 prices = [o["price"] for o in offers]

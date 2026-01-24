@@ -16,7 +16,7 @@ async def setup():
         context = await p.firefox.launch_persistent_context(
             user_data_dir=USER_DATA_DIR,
             headless=False,
-            user_agent="Mozilla/5.0 (X11; Linux x86_64; rv:146.0) Gecko/20100101 Firefox/146.0",
+            user_agent="Mozilla/5.0 (X11; Linux x86_64; rv:147.0) Gecko/20100101 Firefox/147.0",
             viewport={"width": 1280, "height": 720},
             firefox_user_prefs={
                 "dom.webdriver.enabled": False,

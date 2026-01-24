@@ -197,27 +197,11 @@ async def run_import():
     async with async_playwright() as p:
         browser = await p.firefox.launch(headless=True)
         context = await browser.new_context(
-            user_agent="Mozilla/5.0 (X11; Linux x86_64; rv:146.0) Gecko/20100101 Firefox/146.0",
+            user_agent="Mozilla/5.0 (X11; Linux x86_64; rv:147.0) Gecko/20100101 Firefox/147.0",
             extra_http_headers={"Referer": "https://www.cardmarket.com/"}
         )
         try:
             cookies = parse_netscape_cookies("cookies-cardmarket-com.txt")
-            clearance_value = ""
-            try:
-                with open("cf_clearance.txt", "r") as f:
-                    clearance_value = f.read().strip()
-            except Exception:
-                pass
-
-            if clearance_value:
-                cf_clearance = {
-                    "name": "cf_clearance",
-                    "value": clearance_value,
-                    "domain": ".cardmarket.com",
-                    "path": "/",
-                    "secure": True
-                }
-                cookies.append(cf_clearance)
             await context.add_cookies(cookies)
         except Exception as e:
             print(f"Failed to load cookies: {e}")

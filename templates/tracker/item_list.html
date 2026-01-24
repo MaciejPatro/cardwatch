@@ -41,6 +41,7 @@
                 <th>Average Sell Price</th>
                 <th>Proposed Sell Price EUR</th>
                 <th>Revenue</th>
+                <th>Live Gain/Loss (EUR)</th>
                 <th>ROI %</th>
                 <th>Sell Price</th>
                 <th>Sell Date</th>
@@ -50,6 +51,15 @@
         <tbody>
             {% for item in items %}
             {% set fx = fx_dict.get(item.id) %}
+            {% if item.card_id %}
+            <tr class="clickable-row 
+                {% if item.category == 'Personal Collection' %}table-info
+                {% elif item.category == 'Booster Box Investment' %}table-warning
+                {% elif item.category == 'For Grading' %}table-danger
+                {% endif %}
+                {% if item.not_for_sale %}table-secondary text-muted{% endif %}
+            " data-href="{{ url_for('single_card', cid=item.card_id) }}" style="cursor: pointer;">
+                {% else %}
             <tr class="
                 {% if item.category == 'Personal Collection' %}table-info
                 {% elif item.category == 'Booster Box Investment' %}table-warning
@@ -57,13 +67,17 @@
                 {% endif %}
                 {% if item.not_for_sale %}table-secondary text-muted{% endif %}
             ">
+                {% endif %}
                 <td>
                     {% if item.image %}
                     <img src="{{ url_for('tracker.media', filename=item.image) }}" alt="photo"
                         style="max-width:70px; max-height:70px;">
                     {% endif %}
                 </td>
-                <td>{{ item.name }}</td>
+                <td>
+                    {{ item.name }}
+                    {% if item.card_id %} <i class="bi bi-box-arrow-up-right small text-muted"></i> {% endif %}
+                </td>
                 <td class="text-center">
                     {% if item.graded %}
                     <span class="text-success">&#10003;</span>
@@ -81,7 +95,7 @@
                 <td>{{ item.buy_date }}</td>
                 <td>
                     {% if item.link %}
-                    <a href="{{ item.link }}" target="_blank">🔗</a>
+                    <a href="{{ item.link }}" target="_blank" onclick="event.stopPropagation();">🔗</a>
                     {% endif %}
                 </td>
                 <td>{{ item.price|format_float(2) }}</td>
@@ -117,6 +131,19 @@
                         {% endif %}
                 </td>
                 <td>
+                    {% if fx.live_gain_eur is defined and fx.live_gain_eur is not none %}
+                    {% if fx.live_gain_eur > 0 %}
+                    <span class="text-success fw-bold">{{ fx.live_gain_eur|format_float(2) }}</span>
+                    {% elif fx.live_gain_eur < 0 %} <span class="text-danger fw-bold">{{
+                        fx.live_gain_eur|format_float(2) }}</span>
+                        {% else %}
+                        <span class="text-muted">0.00</span>
+                        {% endif %}
+                        {% else %}
+                        <span class="text-muted">–</span>
+                        {% endif %}
+                </td>
+                <td>
                     {% if fx.revenue_pct is not none %}
                     {% if fx.revenue_pct > 0 %}
                     <span class="text-success">+{{ fx.revenue_pct|format_float(1) }}%</span>
@@ -129,7 +156,8 @@
                 <td>{{ item.sell_price|format_float(2) if item.sell_price is not none }}</td>
                 <td>{{ item.sell_date }}</td>
                 <td><a class="btn btn-sm btn-outline-secondary"
-                        href="{{ url_for('tracker.item_edit', item_id=item.id) }}">Edit</a></td>
+                        href="{{ url_for('tracker.item_edit', item_id=item.id) }}"
+                        onclick="event.stopPropagation();">Edit</a></td>
             </tr>
             {% endfor %}
         </tbody>
@@ -187,5 +215,15 @@
         }
     }
     setInterval(checkTrackerUpdates, 60000);
+</script>
+<script>
+    document.addEventListener("DOMContentLoaded", () => {
+        const rows = document.querySelectorAll("tr[data-href]");
+        rows.forEach(row => {
+            row.addEventListener("click", () => {
+                window.location.href = row.dataset.href;
+            });
+        });
+    });
 </script>
 {% endblock %}

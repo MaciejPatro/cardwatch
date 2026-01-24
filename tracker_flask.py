@@ -18,7 +18,7 @@ from flask import (
 )
 from werkzeug.utils import secure_filename
 
-from db import get_db_session, Item
+from db import get_db_session, Item, SingleCard, SingleCardPrice, func
 from tracker_utils.pricecharting import fetch_pricecharting_prices
 from tracker_utils.utils import (
     get_reference_usd,
@@ -97,13 +97,17 @@ def to_dec(val):
     return Decimal(str(val)) if val is not None else Decimal('0')
 
 
-def _update_cache(items):
-    for item in items:
-        if item.link and not item.sell_date:
-            PRICECHARTING_CACHE[item.id] = fetch_pricecharting_prices(item.link)
+def _update_cache(item_dicts):
+    """
+    Update cache for items.
+    item_dicts: list of dicts with 'id', 'link', 'sell_date' keys.
+    """
+    for item in item_dicts:
+        if item['link'] and not item['sell_date']:
+            PRICECHARTING_CACHE[item['id']] = fetch_pricecharting_prices(item['link'])
             time.sleep(15)
         else:
-            PRICECHARTING_CACHE[item.id] = {"psa10_usd": None, "ungraded_usd": None}
+            PRICECHARTING_CACHE[item['id']] = {"psa10_usd": None, "ungraded_usd": None}
     global PRICECHARTING_CACHE_TS
     PRICECHARTING_CACHE_TS = datetime.utcnow().isoformat()
 
@@ -116,7 +120,9 @@ def refresh_pricecharting_cache():
         # an associated PriceCharting link. Those items simply get default
         # price information instead of being skipped entirely.
         items = session.query(Item).all()
-        _update_cache(items)
+        # detach items for thread safety by converting to list of dicts
+        item_dicts = [{'id': i.id, 'link': i.link, 'sell_date': i.sell_date} for i in items]
+        _update_cache(item_dicts)
     PRICECHARTING_CACHE_TS = datetime.utcnow()
 
 
@@ -147,8 +153,33 @@ def get_charting_prices(items):
             charting_prices[item.id] = {"psa10_usd": None, "ungraded_usd": None}
             missing.append(item)
     if missing:
-        Thread(target=_update_cache, args=(missing,), daemon=True).start()
+        # Convert missing items to detached dicts for the thread
+        missing_dicts = [{'id': i.id, 'link': i.link, 'sell_date': i.sell_date} for i in missing]
+        Thread(target=_update_cache, args=(missing_dicts,), daemon=True).start()
     return charting_prices
+
+
+def get_latest_card_prices(session, card_ids):
+    """Fetch the latest SingleCardPrice for a list of card IDs.
+    Returns a dict {card_id: low_price_eur}."""
+    if not card_ids:
+        return {}
+    
+    latest_subq = (
+        session.query(SingleCardPrice.card_id, func.max(SingleCardPrice.ts).label('max_ts'))
+        .filter(SingleCardPrice.card_id.in_(card_ids))
+        .group_by(SingleCardPrice.card_id)
+        .subquery()
+    )
+    
+    latest_prices = (
+        session.query(SingleCardPrice.card_id, SingleCardPrice.low)
+        .join(latest_subq, 
+              (SingleCardPrice.card_id == latest_subq.c.card_id) & 
+              (SingleCardPrice.ts == latest_subq.c.max_ts))
+        .all()
+    )
+    return {r[0]: r[1] for r in latest_prices}
 
 def calculate_fx_dict(items, charting_prices, fx_chf):
     fx_dict = {}
@@ -366,6 +397,28 @@ def item_list():
         fx_dict = calculate_fx_dict(items, charting_prices, fx_chf)
         possible_gain_chf = calculate_possible_gain_chf(items, charting_prices, fx_chf)
 
+        # Single Card Prices map for live gain/loss
+        card_ids = [item.card_id for item in items if item.card_id]
+        single_card_prices = get_latest_card_prices(session, card_ids)
+            
+        # Enrich fx_dict with gain/loss logic
+        for item in items:
+            entry = fx_dict.get(item.id)
+            if entry and item.card_id:
+                current_eur = single_card_prices.get(item.card_id)
+                if current_eur is not None:
+                    buy_eur = entry["price_eur"]
+                    # Calculate gain
+                    gain_eur = current_eur - buy_eur
+                    entry["live_gain_eur"] = gain_eur
+                    entry["current_value_eur"] = current_eur
+                else:
+                    entry["live_gain_eur"] = None
+                    entry["current_value_eur"] = None
+            elif entry:
+                 entry["live_gain_eur"] = None
+                 entry["current_value_eur"] = None
+
         # Filter logic
         category_filter = request.args.get('category_filter', 'All')
         
@@ -416,7 +469,7 @@ def item_list():
         )
 
 
-def calculate_financials(items, monthly_stats):
+def calculate_financials(items, monthly_stats, single_card_prices=None):
     fx_chf = get_fx_rates("CHF")
     charting_prices = get_charting_prices(items)
     
@@ -469,6 +522,26 @@ def calculate_financials(items, monthly_stats):
     if fx_chf.get("USD"):
         unrealized_pl += Decimal(str(not_for_sale_gain_usd / fx_chf["USD"]))
 
+    # Total Live Gain (CHF) calculation
+    total_live_gain_chf = Decimal('0')
+    if single_card_prices:
+        eur_to_chf = Decimal(str(fx_chf.get("EUR", 1.0)))
+        usd_to_eur = Decimal(str(get_fx_rates("USD").get("EUR", 1.0))) # For converting buy price if needed, but we have calculate_fx_dict logic
+        
+        # We need to replicate calculate_fx_dict's buy price logic partially or assume EUR price is available
+        # Actually simplest to just re-do buy_eur calculation here for items with card_id
+        for item in items:
+            if item.card_id and item.card_id in single_card_prices:
+                current_eur = single_card_prices[item.card_id]
+                if current_eur is not None:
+                    # Calculate Buy Price in EUR
+                    fx_rates = get_fx_rates(item.currency)
+                    buy_price_eur = float(item.price) * fx_rates.get("EUR", 1.0)
+                    
+                    gain_eur = current_eur - buy_price_eur
+                    gain_chf = Decimal(str(gain_eur)) * eur_to_chf
+                    total_live_gain_chf += gain_chf
+
     realized_pl = sum((entry['revenue'] for entry in monthly_stats), Decimal('0'))
     total_net = (realized_pl + unrealized_pl)
 
@@ -492,6 +565,7 @@ def calculate_financials(items, monthly_stats):
         "buy_total": sum((entry['buy_total'] for entry in monthly_stats), Decimal('0')).quantize(Q, rounding=ROUND_HALF_UP),
         "sell_total": sum((entry['sell_total'] for entry in monthly_stats), Decimal('0')).quantize(Q, rounding=ROUND_HALF_UP),
         "total_roi_pct": total_roi_pct,
+        "total_live_gain_chf": total_live_gain_chf.quantize(Q, rounding=ROUND_HALF_UP),
     }
 
 
@@ -511,7 +585,9 @@ def stats_overview():
         }
 
         # Financials
-        totals = calculate_financials(items, monthly_stats)
+        card_ids = [item.card_id for item in items if item.card_id]
+        single_card_prices = get_latest_card_prices(session, card_ids)
+        totals = calculate_financials(items, monthly_stats, single_card_prices)
         
         insight_suggestions = [
             'Track the sell-through rate over time to spot changes in demand.',
@@ -582,14 +658,17 @@ def item_add():
                 buy_date=date.fromisoformat(buy_date), # Kept original date conversion
                 link=link,
                 graded=graded,
+
                 price=price,
                 currency=currency,
                 sell_price=sell_price,
                 sell_date=sell_date,
                 image=image_filename,
                 not_for_sale=not_for_sale,
-                category=category
+                category=category,
+                card_id=int(request.form.get('card_id')) if request.form.get('card_id') else None
             )
+
             session.add(new_item) # Changed to new_item
             session.commit()
             flash('Item added.')
@@ -615,6 +694,8 @@ def item_edit(item_id):
             item.sell_date = date.fromisoformat(sd) if sd else None
             item.not_for_sale = 1 if request.form.get('not_for_sale') else 0
             item.category = request.form.get('category', 'Active')
+            cid_val = request.form.get('card_id')
+            item.card_id = int(cid_val) if cid_val else None
 
             # Sync not_for_sale with category
             if item.category == 'Personal Collection':

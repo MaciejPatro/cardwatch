@@ -888,8 +888,9 @@ def update_cookies():
         new_val = request.form.get("cf_clearance", "").strip()
         if new_val:
             try:
-                with open("cf_clearance.txt", "w") as f:
-                    f.write(new_val)
+                from cookie_loader import update_cookie_in_file
+                update_cookie_in_file("cookies-cardmarket-com.txt", "cf_clearance", new_val)
+                
                 # Also reset the scraper status to OK tentatively
                 from scraper import update_scraper_status
                 update_scraper_status("ok", "Cookie updated by user.")

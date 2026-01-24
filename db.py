@@ -144,6 +144,7 @@ class Item(Base):
     image = Column(String, nullable=True)
     not_for_sale = Column(Integer, default=0)
     category = Column(String, default="Active")
+    card_id = Column(Integer, nullable=True)
 
 
 class PSA10Price(Base):
