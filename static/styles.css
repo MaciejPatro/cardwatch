@@ -3,7 +3,7 @@ body {
     margin: 0;
 }
 
-nav {
+nav.navbar {
     background: #111;
     color: #fff;
     padding: 10px 16px;
@@ -12,7 +12,7 @@ nav {
     align-items: center;
 }
 
-nav a {
+nav.navbar a {
     color: #ddd;
     text-decoration: none;
 }

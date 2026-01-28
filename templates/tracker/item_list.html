@@ -45,7 +45,7 @@
                 <th>ROI %</th>
                 <th>Sell Price</th>
                 <th>Sell Date</th>
-                <th>Edit</th>
+                <th>Actions</th>
             </tr>
         </thead>
         <tbody>
@@ -157,7 +157,14 @@
                 <td>{{ item.sell_date }}</td>
                 <td><a class="btn btn-sm btn-outline-secondary"
                         href="{{ url_for('tracker.item_edit', item_id=item.id) }}"
-                        onclick="event.stopPropagation();">Edit</a></td>
+                        onclick="event.stopPropagation();">Edit</a>
+                    <form action="{{ url_for('tracker.item_duplicate', item_id=item.id) }}" method="post"
+                        class="d-inline" onclick="event.stopPropagation();">
+                        <button type="submit" class="btn btn-sm btn-outline-primary" title="Duplicate this item">
+                            <i class="bi bi-files"></i>
+                        </button>
+                    </form>
+                </td>
             </tr>
             {% endfor %}
         </tbody>
@@ -196,6 +203,37 @@
                 <strong>Bought for (finished):</strong> CHF {{ bought_finished_chf|format_float(2) }} <br>
                 <strong>Sold for (finished):</strong> CHF {{ sold_finished_chf|format_float(2) }}
     </div>
+
+    <!-- Pagination Controls -->
+    {% if total_pages > 1 %}
+    <nav aria-label="Page navigation" class="mt-4">
+        <ul class="pagination justify-content-center">
+
+            <!-- Previous -->
+            <li class="page-item {% if page <= 1 %}disabled{% endif %}">
+                <a class="page-link"
+                    href="{{ url_for('tracker.item_list', page=page-1, category_filter=category_filter) }}"
+                    aria-label="Previous">
+                    <span aria-hidden="true">&laquo; Previous</span>
+                </a>
+            </li>
+
+            <!-- Page Info -->
+            <li class="page-item disabled">
+                <span class="page-link">Page {{ page }} of {{ total_pages }}</span>
+            </li>
+
+            <!-- Next -->
+            <li class="page-item {% if page >= total_pages %}disabled{% endif %}">
+                <a class="page-link"
+                    href="{{ url_for('tracker.item_list', page=page+1, category_filter=category_filter) }}"
+                    aria-label="Next">
+                    <span aria-hidden="true">Next &raquo;</span>
+                </a>
+            </li>
+        </ul>
+    </nav>
+    {% endif %}
 
 </div>
 {% endblock %}

@@ -1,4 +1,5 @@
 import os
+import shutil
 from collections import OrderedDict
 from datetime import date, datetime
 from decimal import Decimal, ROUND_HALF_UP
@@ -332,6 +333,106 @@ def calculate_monthly_tracker_stats(items):
     return results
 
 
+    return results
+
+
+def calculate_yearly_tracker_stats(items):
+    items_with_buy_dates = [item for item in items if item.buy_date]
+    if not items_with_buy_dates:
+        return []
+
+    # Identify all relevant years
+    years = set()
+    for item in items_with_buy_dates:
+        years.add(item.buy_date.year)
+    for item in items:
+        if item.sell_date:
+            years.add(item.sell_date.year)
+    
+    sorted_years = sorted(list(years), reverse=True)
+
+    yearly_totals = OrderedDict()
+    for year in sorted_years:
+        yearly_totals[year] = {
+            'buy_total': Decimal('0'),
+            'personal_col_total': Decimal('0'),
+            'booster_total': Decimal('0'),
+            'grading_total': Decimal('0'),
+            'sell_total': Decimal('0'),
+            'cost_sold': Decimal('0'),
+            'revenue': Decimal('0'),
+            'bought_count': 0,
+            'sold_count': 0,
+        }
+
+    currency_to_chf = {}
+    for item in items_with_buy_dates:
+        currency = item.currency
+        if currency not in currency_to_chf:
+            currency_to_chf[currency] = Decimal(str(get_fx_rates(currency).get('CHF', 1.0)))
+
+    for item in items_with_buy_dates:
+        buy_year = item.buy_date.year
+        fx_rate = currency_to_chf.get(item.currency, Decimal('1'))
+        buy_value_chf = to_dec(item.price) * fx_rate
+        
+        if buy_year in yearly_totals:
+            yearly_totals[buy_year]['bought_count'] += 1
+            
+            if item.category == "Booster Box Investment":
+                yearly_totals[buy_year]['booster_total'] += buy_value_chf
+            elif item.category == "For Grading":
+                 yearly_totals[buy_year]['grading_total'] += buy_value_chf
+            elif item.category == "Personal Collection" or item.not_for_sale:
+                 yearly_totals[buy_year]['personal_col_total'] += buy_value_chf
+            else:
+                # Active / Inventory
+                yearly_totals[buy_year]['buy_total'] += buy_value_chf
+
+        if item.sell_price is not None and item.sell_date:
+            sell_year = item.sell_date.year
+            if sell_year in yearly_totals:
+                sell_total = to_dec(item.sell_price)
+                revenue = sell_total - buy_value_chf
+                
+                yearly_totals[sell_year]['sell_total'] += sell_total
+                yearly_totals[sell_year]['cost_sold'] += buy_value_chf
+                yearly_totals[sell_year]['revenue'] += revenue
+                yearly_totals[sell_year]['sold_count'] += 1
+
+    results = []
+    for year, data in yearly_totals.items():
+        buy_total = data['buy_total'].quantize(Q, rounding=ROUND_HALF_UP)
+        personal_col_total = data['personal_col_total'].quantize(Q, rounding=ROUND_HALF_UP)
+        booster_total = data['booster_total'].quantize(Q, rounding=ROUND_HALF_UP)
+        grading_total = data['grading_total'].quantize(Q, rounding=ROUND_HALF_UP)
+        
+        sell_total = data['sell_total'].quantize(Q, rounding=ROUND_HALF_UP)
+        revenue = data['revenue'].quantize(Q, rounding=ROUND_HALF_UP)
+        cost_sold = data['cost_sold']
+        
+        roi_pct = None
+        if cost_sold > 0:
+            roi_pct = (data['revenue'] / cost_sold * Decimal('100')).quantize(Q, rounding=ROUND_HALF_UP)
+
+        results.append({
+            'year': year,
+            'label': str(year),
+            'buy_total': buy_total,
+            'personal_col_total': personal_col_total,
+            'booster_total': booster_total,
+            'grading_total': grading_total,
+            'sell_total': sell_total,
+            'revenue': revenue,
+            'cost_sold': cost_sold.quantize(Q, rounding=ROUND_HALF_UP),
+            'roi_pct': roi_pct,
+            'bought_count': data['bought_count'],
+            'sold_count': data['sold_count'],
+        })
+
+    return results
+
+
 def calculate_sale_time_stats(items):
     total_items = len(items)
     sellable_items = sum(1 for item in items if not item.not_for_sale)
@@ -390,6 +491,8 @@ def api_cache_ts():
 
 @tracker_bp.route('/')
 def item_list():
+    page = int(request.args.get('page', 1))
+    per_page = int(request.args.get('per_page', 50))
     with get_db_session() as session:
         items = session.query(Item).order_by(Item.buy_date.desc()).all()
         fx_chf = get_fx_rates("CHF")
@@ -453,7 +556,7 @@ def item_list():
 
         return render_template(
             'tracker/item_list.html',
-            items=visible_items,
+            items=visible_items[(page - 1) * per_page : page * per_page],
             fx_dict=fx_dict,
             charting_prices=charting_prices,
             invested=invested,
@@ -466,6 +569,9 @@ def item_list():
 
             not_for_sale_total_chf=not_for_sale_total_chf,
             category_filter=category_filter,
+            page=page,
+            total_pages=(len(visible_items) + per_page - 1) // per_page,
+            per_page=per_page,
         )
 
 
@@ -595,9 +701,12 @@ def stats_overview():
             'Compare the capital tied up in not-for-sale items against realized revenue to guide future purchases.',
         ]
 
+        yearly_stats = calculate_yearly_tracker_stats(items)
+
     return render_template(
         'tracker/stats_overview.html',
         monthly_stats=monthly_stats,
+        yearly_stats=yearly_stats,
         totals=totals,
         summary_stats=sale_time_stats,
         insight_suggestions=insight_suggestions,
@@ -733,3 +842,54 @@ def item_delete(item_id):
             flash('Item not found.')
         return redirect(url_for('tracker.item_list'))
 
+
+@tracker_bp.route('/duplicate/<int:item_id>', methods=['POST'])
+def item_duplicate(item_id):
+    with get_db_session() as session:
+        item = session.get(Item, item_id)
+        if not item:
+            flash('Item not found.')
+            return redirect(url_for('tracker.item_list'))
+
+        # Copy image if exists
+        new_image_filename = None
+        if item.image:
+            try:
+                original_path = os.path.join(MEDIA_ROOT, item.image)
+                if os.path.exists(original_path):
+                    # Create new unique filename
+                    ext = os.path.splitext(item.image)[1]
+                    new_filename = f"{uuid.uuid4().hex}_{secure_filename('copy' + ext)}"
+                    
+                    # Determine target folder (same as original or default upload folder)
+                    original_dir = os.path.dirname(original_path)
+                    new_path = os.path.join(original_dir, new_filename)
+                    
+                    shutil.copy2(original_path, new_path)
+                    
+                    # Store relative path
+                    relative_dir = os.path.dirname(item.image)
+                    new_image_filename = os.path.join(relative_dir, new_filename)
+            except Exception as e:
+                print(f"Error copying image: {e}")
+                pass
+
+        new_item = Item(
+            name=item.name,
+            buy_date=item.buy_date,
+            link=item.link,
+            graded=item.graded,
+            price=item.price,
+            currency=item.currency,
+            sell_price=None, # Reset sell info
+            sell_date=None,  # Reset sell info
+            image=new_image_filename,
+            not_for_sale=item.not_for_sale,
+            category=item.category,
+            card_id=item.card_id
+        )
+
+        session.add(new_item)
+        session.commit()
+        flash('Item duplicated.')
+        return redirect(url_for('tracker.item_list'))

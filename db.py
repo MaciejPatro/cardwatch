@@ -169,6 +169,28 @@ class PSA10Offer(Base):
     card = relationship("SingleCard", back_populates="psa10_offers")
 
 
+class BookkeepingEntry(Base):
+    __tablename__ = "bookkeeping_entries"
+    
+    id = Column(Integer, primary_key=True)
+    date = Column(Date, nullable=False, default=date.today)
+    entry_type = Column(String, nullable=False) # 'cost', 'gain'
+    description = Column(String, nullable=True)
+    
+    amount_eur = Column(Float, nullable=False, default=0.0)
+    amount_chf = Column(Float, nullable=False, default=0.0)
+    original_currency = Column(String, nullable=False, default='EUR') # 'EUR', 'CHF'
+    exchange_rate = Column(Float, nullable=False, default=1.0)
+    
+    file_path = Column(String, nullable=True) # Relative path to storage
+    
+    is_private_collection = Column(Integer, default=0) # 0 or 1
+    market_value = Column(Float, nullable=True)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+
 def init_db():
     Base.metadata.create_all(ENGINE)
 

@@ -182,6 +182,65 @@
     </div>
     {% endif %}
 
+    {% if yearly_stats %}
+    <div class="card mb-4">
+        <div class="card-header bg-white fw-bold">Yearly Overview</div>
+        <div class="table-responsive">
+            <table class="table table-bordered table-sm table-hover bg-white mb-0 align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th scope="col">Year</th>
+                        <th scope="col">Active Bought (CHF)</th>
+                        <th scope="col">Personal Col. (CHF)</th>
+                        <th scope="col">Booster Inv. (CHF)</th>
+                        <th scope="col">Sold (CHF)</th>
+                        <th scope="col">Revenue (CHF)</th>
+                        <th scope="col">ROI %</th>
+                        <th scope="col">Transactions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for year_data in yearly_stats %}
+                    <tr>
+                        <td>{{ year_data.label }}</td>
+                        <td>CHF {{ year_data.buy_total|format_float(2) }} {% if year_data.bought_count > 0 %}<small
+                                class="text-muted">({{
+                                year_data.bought_count }})</small>{% endif %}</td>
+                        <td>CHF {{ year_data.personal_col_total|format_float(2) }}</td>
+                        <td>CHF {{ year_data.booster_total|format_float(2) }}</td>
+                        <td>CHF {{ year_data.sell_total|format_float(2) }} <small class="text-muted">({{
+                                year_data.sold_count }})</small></td>
+                        <td>
+                            {% if year_data.revenue > 0 %}
+                            <span class="text-success">+CHF {{ year_data.revenue|format_float(2) }}</span>
+                            {% elif year_data.revenue < 0 %} <span class="text-danger">CHF {{
+                                year_data.revenue|format_float(2) }}</span>
+                                {% else %}
+                                CHF {{ year_data.revenue|format_float(2) }}
+                                {% endif %}
+                        </td>
+                        <td>
+                            {% if year_data.roi_pct is not none %}
+                            {% if year_data.roi_pct > 0 %}
+                            <span class="text-success">+{{ year_data.roi_pct|format_float(1) }}%</span>
+                            {% elif year_data.roi_pct < 0 %} <span class="text-danger">{{
+                                year_data.roi_pct|format_float(1) }}%</span>
+                                {% else %}
+                                <span class="text-body">{{ year_data.roi_pct|format_float(1) }}%</span>
+                                {% endif %}
+                                {% else %}
+                                &mdash;
+                                {% endif %}
+                        </td>
+                        <td>{{ year_data.bought_count + year_data.sold_count }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+
     {% if monthly_stats %}
     <div class="row row-cols-1 row-cols-lg-2 g-4">
         <!-- Acquisitions Table -->
