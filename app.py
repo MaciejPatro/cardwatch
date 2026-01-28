@@ -16,6 +16,8 @@ from db import (
     SingleCardDaily,
     PSA10Price,
     PSA10Offer,
+    BookkeepingEntry,
+    Item,
 )
 from scraper import (
     schedule_hourly,
@@ -26,6 +28,7 @@ from scraper import (
     scrape_single_cards,
 )
 from tracker_utils.deal_finder import calculate_deals, get_market_sentiment
+from tracker_utils.invoice_parser import parse_cardmarket_invoice
 import tracker_flask
 from tracker_flask import tracker_bp, init_tracker_scheduler, save_uploaded_image
 from datetime import datetime, timedelta
@@ -39,6 +42,9 @@ configure_logging(app)
 
 SINGLE_CARD_UPLOAD_FOLDER = os.path.join(app.config['MEDIA_ROOT'], "single_card_images")
 os.makedirs(SINGLE_CARD_UPLOAD_FOLDER, exist_ok=True)
+
+BOOKKEEPING_UPLOAD_FOLDER = os.path.join(app.config['MEDIA_ROOT'], "invoices")
+os.makedirs(BOOKKEEPING_UPLOAD_FOLDER, exist_ok=True)
 
 init_db()
 if not app.config.get("CARDWATCH_DISABLE_SCHEDULER") and (
@@ -900,6 +906,362 @@ def update_cookies():
         return redirect(url_for('home'))
         
     return render_template("update_cookies.html")
+
+
+
+@app.route("/cardwatch/bookkeeping")
+def bookkeeping():
+    try:
+        year = int(request.args.get("year", datetime.now().year))
+        month = int(request.args.get("month", datetime.now().month))
+    except ValueError:
+        year = datetime.now().year
+        month = datetime.now().month
+
+    with get_db_session() as s:
+        entries = s.query(BookkeepingEntry).filter(
+            func.extract('year', BookkeepingEntry.date) == year,
+            func.extract('month', BookkeepingEntry.date) == month
+        ).order_by(BookkeepingEntry.date.desc()).all()
+
+        return render_template("bookkeeping.html", entries=entries, year=year, month=month)
+
+@app.route("/cardwatch/bookkeeping/add", methods=["POST"])
+def add_bookkeeping_entry():
+    date_str = request.form.get("date")
+    entry_type = request.form.get("entry_type") # 'cost', 'gain'
+    description = request.form.get("description")
+    amount = float(request.form.get("amount", 0.0))
+    currency = request.form.get("currency") # 'EUR', 'CHF'
+    rate = float(request.form.get("exchange_rate", 1.0))
+    is_private = "is_private_collection" in request.form
+    market_value = request.form.get("market_value")
+    market_value = float(market_value) if market_value else None
+
+    # Calculate other currency
+    amount_eur = 0.0
+    amount_chf = 0.0
+    
+    if currency == 'EUR':
+        amount_eur = amount
+        amount_chf = amount * rate
+    else:
+        amount_chf = amount
+        amount_eur = amount / rate if rate > 0 else 0
+
+    # File Upload
+    file_path = None
+    file = request.files.get("invoice")
+    if file and file.filename:
+        import uuid
+        from werkzeug.utils import secure_filename
+        
+        ext = os.path.splitext(file.filename)[1]
+        filename = f"{uuid.uuid4().hex}{ext}"
+        
+        # Organization: invoices/year/month/
+        entry_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+        subfolder = os.path.join(str(entry_date.year), str(entry_date.month)) # careful with 1 vs 01, str(int) is no padding
+        
+        abs_folder = os.path.join(BOOKKEEPING_UPLOAD_FOLDER, subfolder)
+        os.makedirs(abs_folder, exist_ok=True)
+        
+        save_path = os.path.join(abs_folder, filename)
+        file.save(save_path)
+        
+        # Store relative path for serving if needed, or just relative to MEDIA_ROOT
+        # or relative to invoices folder. Let's store relative to MEDIA_ROOT, so "invoices/2025/1/file.pdf"
+        file_path = os.path.join("invoices", subfolder, filename)
+
+    with get_db_session() as s:
+        entry = BookkeepingEntry(
+            date=datetime.strptime(date_str, "%Y-%m-%d").date(),
+            entry_type=entry_type,
+            description=description,
+            amount_eur=amount_eur,
+            amount_chf=amount_chf,
+            original_currency=currency,
+            exchange_rate=rate,
+            file_path=file_path,
+            is_private_collection=1 if is_private else 0,
+            market_value=market_value
+        )
+        s.add(entry)
+        s.commit()
+        
+    return redirect(url_for('bookkeeping', year=entry.date.year, month=entry.date.month))
+
+
+@app.route("/cardwatch/bookkeeping/upload-invoice", methods=["POST"])
+def upload_invoice():
+    file = request.files.get("invoice_file")
+    if not file:
+        return jsonify({"success": False, "error": "No file provided"}), 400
+        
+    import uuid
+    from werkzeug.utils import secure_filename
+    
+    ext = os.path.splitext(file.filename)[1]
+    if ext.lower() != ".pdf":
+         return jsonify({"success": False, "error": "Only PDF supported"}), 400
+
+    filename = f"{uuid.uuid4().hex}{ext}"
+    temp_folder = os.path.join(BOOKKEEPING_UPLOAD_FOLDER, "temp")
+    os.makedirs(temp_folder, exist_ok=True)
+    
+    save_path = os.path.join(temp_folder, filename)
+    file.save(save_path)
+    
+    # Parse
+    data = parse_cardmarket_invoice(save_path)
+    if not data:
+         return jsonify({"success": False, "error": "Could not parse invoice"}), 500
+         
+    # Return data + temp filename
+    return jsonify({"success": True, "data": data, "temp_filename": filename})
+
+
+@app.route("/cardwatch/bookkeeping/confirm-invoice", methods=["POST"])
+def confirm_invoice():
+    req = request.json
+    data = req.get("data")
+    temp_filename = req.get("temp_filename")
+    
+    if not data or not temp_filename:
+        return jsonify({"success": False, "error": "Missing data"}), 400
+
+    # Move file
+    temp_path = os.path.join(BOOKKEEPING_UPLOAD_FOLDER, "temp", temp_filename)
+    if not os.path.exists(temp_path):
+        return jsonify({"success": False, "error": "Temp file lost"}), 400
+        
+    date_str = data.get("date", datetime.now().strftime("%Y-%m-%d"))
+    entry_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+    
+    subfolder = os.path.join(str(entry_date.year), str(entry_date.month))
+    abs_folder = os.path.join(BOOKKEEPING_UPLOAD_FOLDER, subfolder)
+    os.makedirs(abs_folder, exist_ok=True)
+    
+    final_path = os.path.join(abs_folder, temp_filename)
+    os.rename(temp_path, final_path)
+    
+    # Relative path for DB
+    file_path = os.path.join("invoices", subfolder, temp_filename)
+    
+    # DB Operations
+    with get_db_session() as s:
+        # 1. Create Bookkeeping Entry (Cost)
+        bk_entry = BookkeepingEntry(
+            date=entry_date,
+            entry_type="cost",
+            description=f"Invoice {data.get('order_id')} - {data.get('seller_name')}",
+            amount_eur=data.get("total_amount"),
+            amount_chf=0.0, # Assuming invoice is EUR, logic for rate?
+            original_currency=data.get("currency", "EUR"), 
+            # We don't have rate in PDF usually. Default to 1.0 or user should have provided?
+            # For simplicity let's stick to 1.0 for now or fetch recent rate?
+            # User request didn't specify. We will default to 1.0 logic from before:
+            exchange_rate=0.95,  # Placeholder default, maybe should accept from frontend
+            file_path=file_path,
+            is_private_collection=0
+        )
+        
+        # Calculate CHF roughly or keep 0 and user edits?
+        # Let's use the 0.95 hardcoded or pass from frontend if we added a field in the modal.
+        # Ideally frontend modal should calculate it. 
+        # But here we are confirming auto-parsed data.
+        # Let's check if req has rate.
+        rate = float(req.get("exchange_rate", 0.95))
+        bk_entry.exchange_rate = rate
+        if bk_entry.original_currency == 'EUR':
+             bk_entry.amount_chf = bk_entry.amount_eur * rate
+        else: # assuming CHF
+             bk_entry.amount_eur = bk_entry.amount_chf / rate if rate > 0 else 0
+             
+        s.add(bk_entry)
+        s.flush() # get ID
+        
+        # 2. Create Items
+        items_data = data.get("items", [])
+        total_items_price = sum(i["price"] for i in items_data)
+        total_shipping_vat = data.get("shipping_cost", 0) + data.get("vat_cost", 0)
+        
+        for item in items_data:
+            # Distribute shipping/vat proportionally by value?
+            # Logic: (item_price / total_items_price) * total_shipping
+            # Handle div by zero
+            share = 0
+            if total_items_price > 0:
+                share = (item["price"] / total_items_price) * total_shipping_vat
+            else:
+                # split evenly?
+                share = total_shipping_vat / len(items_data) if items_data else 0
+                
+            db_item = Item(
+                name=item["name"],
+                buy_date=entry_date,
+                price=item["price"],
+                currency=data.get("currency", "EUR"),
+                extra_costs=share,
+                external_id=data.get("order_id"),
+                bookkeeping_id=bk_entry.id,
+                
+                # Defaults
+                category="Active",
+                graded=0,
+                not_for_sale=0
+            )
+            s.add(db_item)
+            
+        s.commit()
+        
+    return jsonify({"success": True})
+
+
+    return jsonify({"success": True})
+
+
+@app.route("/cardwatch/bookkeeping/delete/<int:entry_id>", methods=["POST"])
+def delete_bookkeeping_entry(entry_id):
+    with get_db_session() as s:
+        entry = s.query(BookkeepingEntry).filter_by(id=entry_id).first()
+        if entry:
+            # Unlink items (set bookkeeping_id to NULL)
+            items = s.query(Item).filter_by(bookkeeping_id=entry.id).all()
+            for item in items:
+                item.bookkeeping_id = None
+                
+            # If file attached, we could delete it, but maybe keep it safe?
+            # User didn't specify. Let's keep file for now to avoid data loss.
+            
+            s.delete(entry)
+            s.commit()
+            
+    return redirect(request.referrer or url_for('bookkeeping'))
+
+
+@app.route("/cardwatch/bookkeeping/export_pdf")
+def export_bookkeeping_pdf():
+    try:
+        from reportlab.lib import colors
+        from reportlab.lib.pagesizes import letter, landscape
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+        from reportlab.lib.styles import getSampleStyleSheet
+        import io
+        
+        year = int(request.args.get("year", datetime.now().year))
+        month = int(request.args.get("month", datetime.now().month))
+        
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=landscape(letter))
+        elements = []
+        
+        styles = getSampleStyleSheet()
+        elements.append(Paragraph(f"Bookkeeping Report - {month}/{year}", styles['Title']))
+        elements.append(Spacer(1, 12))
+        
+        # Fetch data
+        with get_db_session() as s:
+            entries = s.query(BookkeepingEntry).filter(
+                func.extract('year', BookkeepingEntry.date) == year,
+                func.extract('month', BookkeepingEntry.date) == month
+            ).order_by(BookkeepingEntry.date).all()
+            
+            # Table Data
+            data = [['Date', 'Description', 'Type', 'Amount (EUR)', 'Amount (CHF)', 'Private']]
+            
+            total_eur = 0
+            total_chf = 0
+            
+            for e in entries:
+                row = [
+                    e.date.strftime("%Y-%m-%d"),
+                    e.description[:50],
+                    e.entry_type.upper(),
+                    f"{e.amount_eur:.2f}",
+                    f"{e.amount_chf:.2f}",
+                    "Yes" if e.is_private_collection else "No"
+                ]
+                data.append(row)
+                
+                # Calc totals (Cost is usually negative in bookkeeping? 
+                # But here we store absolute values and have type. 
+                # Let's simple sum: Gain - Cost
+                sign = 1 if e.entry_type == 'gain' else -1
+                total_eur += e.amount_eur * sign
+                total_chf += e.amount_chf * sign
+
+            # Totals Row
+            data.append(['', 'TOTAL', '', f"{total_eur:.2f}", f"{total_chf:.2f}", ''])
+            
+            # Table Style
+            table = Table(data)
+            style = TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                ('BACKGROUND', (0, 1), (-1, -2), colors.beige),
+                ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                ('ALIGN', (3, 1), (4, -1), 'RIGHT'), # Amounts right align
+            ])
+            
+            # Color rows based on type in loop (skip header and total)
+            for i, e in enumerate(entries):
+                row_idx = i + 1
+                color = colors.lightgreen if e.entry_type == 'gain' else colors.lightpink
+                style.add('BACKGROUND', (0, row_idx), (-1, row_idx), color)
+                
+            table.setStyle(style)
+            elements.append(table)
+            
+            # Stock Items List?
+            # User said "print to pdf the bookkeeping and stock"
+            # Maybe list items allocated this month? or just total Stock added?
+            # Let's add a second table for Stock Items acquired this month
+            
+            elements.append(Spacer(1, 24))
+            elements.append(Paragraph("Stock Items Acquired", styles['Heading2']))
+            
+            items = s.query(Item).filter(
+                func.extract('year', Item.buy_date) == year,
+                func.extract('month', Item.buy_date) == month
+            ).all()
+            
+            if items:
+                item_data = [['Buying Date', 'Name', 'Price', 'Extra Costs (Ship/Tax)', 'Total Cost']]
+                for i in items:
+                    total_cost = i.price + (i.extra_costs or 0)
+                    item_data.append([
+                        i.buy_date.strftime("%Y-%m-%d"),
+                        i.name[:60],
+                        f"{i.price:.2f} {i.currency}",
+                        f"{i.extra_costs:.2f}",
+                        f"{total_cost:.2f}"
+                    ])
+                
+                item_table = Table(item_data)
+                item_table.setStyle(TableStyle([
+                     ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+                     ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                     ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                ]))
+                elements.append(item_table)
+            else:
+                elements.append(Paragraph("No stock items acquired this month.", styles['Normal']))
+
+        doc.build(elements)
+        buffer.seek(0)
+        
+        from flask import send_file
+        return send_file(buffer, as_attachment=True, download_name=f"Bookkeeping_{year}_{month}.pdf", mimetype='application/pdf')
+        
+    except ImportError:
+        return "ReportLab is not installed.", 500
+    except Exception as e:
+        return f"Error generating PDF: {e}", 500
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)

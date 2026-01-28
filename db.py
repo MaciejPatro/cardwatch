@@ -145,6 +145,13 @@ class Item(Base):
     not_for_sale = Column(Integer, default=0)
     category = Column(String, default="Active")
     card_id = Column(Integer, nullable=True)
+    
+    # New columns for Invoice Parsing & accurate costs
+    extra_costs = Column(Float, nullable=False, default=0.0)
+    external_id = Column(String, nullable=True) # e.g. Cardmarket Order ID
+    bookkeeping_id = Column(Integer, ForeignKey("bookkeeping_entries.id"), nullable=True)
+    
+    bookkeeping_entry = relationship("BookkeepingEntry", backref="items")
 
 
 class PSA10Price(Base):
