@@ -32,6 +32,10 @@
         <button class="btn btn-info ms-2" data-bs-toggle="modal" data-bs-target="#uploadRatesModal">
             💱 Upload Rates
         </button>
+        <button class="btn btn-dark ms-2" onclick="document.getElementById('receiptInput').click()">
+            🧾 Scan Receipt
+        </button>
+        <input type="file" id="receiptInput" class="d-none" accept="image/*" onchange="uploadReceipt(this)">
     </div>
 </div>
 
@@ -58,6 +62,7 @@
                 <th>Description</th>
                 <th class="text-end">Amount (EUR)</th>
                 <th class="text-end">Amount (CHF)</th>
+                <th class="text-end">Income</th>
                 <th class="text-center">Type</th>
                 <th class="text-center">Pvt. Col.</th>
                 <th>Actions</th>
@@ -102,6 +107,15 @@
                 </td>
                 <td class="text-end">{{ "%.2f"|format(entry.amount_eur) }}</td>
                 <td class="text-end">{{ "%.2f"|format(entry.amount_chf) }}</td>
+                <td class="text-end fw-bold">
+                    {% if entry.profit_display %}
+                    {% if entry.profit_chf >= 0 %}
+                    <span class="text-success">+{{ "%.2f"|format(entry.profit_chf) }}</span>
+                    {% else %}
+                    <span class="text-danger">{{ "%.2f"|format(entry.profit_chf) }}</span>
+                    {% endif %}
+                    {% endif %}
+                </td>
                 <td class="text-center">
                     {% if entry.is_private_collection %}
                     <span class="badge bg-secondary">Private</span>
@@ -150,12 +164,38 @@
             {{ render_row(entry) }}
             {% else %}
             <tr>
-                <td colspan="7" class="text-center text-muted">No entries for this month.</td>
+                <td colspan="8" class="text-center text-muted">No entries for this month.</td>
             </tr>
             {% endfor %}
         </tbody>
     </table>
 </div>
+
+<!-- Monthly Totals Footer -->
+<div class="fixed-bottom bg-white border-top shadow-lg p-3">
+    <div class="container d-flex justify-content-around align-items-center">
+        <div class="text-center">
+            <small class="text-muted d-block">Monthly Revenue</small>
+            <span class="h5 text-success mb-0">+{{ "%.2f"|format(total_revenue_chf) }} CHF</span>
+        </div>
+        <div class="text-center border-start border-end px-5">
+            <small class="text-muted d-block">Net Result</small>
+            <span class="h4 fw-bold {% if net_result_chf >= 0 %}text-success{% else %}text-danger{% endif %} mb-0">
+                {{ "%.2f"|format(net_result_chf) }} CHF
+            </span>
+        </div>
+        <div class="text-center">
+            <small class="text-muted d-block">Monthly Expenses</small>
+            <span class="h5 text-danger mb-0">-{{ "%.2f"|format(total_expense_chf) }} CHF</span>
+        </div>
+        <div class="text-center border-start ps-5">
+            <small class="text-muted d-block">Total Stock Value</small>
+            <span class="h5 text-primary mb-0">{{ "%.2f"|format(total_stock_value_chf) }} CHF</span>
+        </div>
+    </div>
+</div>
+<!-- Add spacer for fixed footer -->
+<div style="height: 100px;"></div>
 
 <!-- Stock Inventory Section -->
 <div class="card mt-4 mb-4">
@@ -216,6 +256,8 @@
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
+                    <input type="hidden" name="existing_file" id="addEntryExistingFile">
+                    <div id="scanMsg" class="alert alert-success d-none mb-3"></div>
                     <div class="mb-3">
                         <label class="form-label">Date</label>
                         <input type="date" name="date" class="form-control" required
@@ -551,7 +593,6 @@
 
                 if (needsDecl) {
                     declSection.classList.remove('d-none');
-                    // Set Form Action
                     declForm.action = `/cardwatch/bookkeeping/toggle-declaration/${id}`;
 
                     if (declFiled) {
@@ -569,6 +610,7 @@
                     declSection.classList.add('d-none');
                 }
 
+                // Market Value
                 if (isPriv && marketVal) {
                     document.getElementById('detailMarketVal').textContent = parseFloat(marketVal).toFixed(2);
                     document.getElementById('detailMarketValP').classList.remove('d-none');
@@ -576,13 +618,16 @@
                     document.getElementById('detailMarketValP').classList.add('d-none');
                 }
 
+                // File Logic
                 const fileContainer = document.getElementById('fileLinkContainer');
                 fileContainer.innerHTML = '';
-                if (file && file !== 'None') {
-                    // Update to use the new route for bookkeeping files
-                    const url = "/cardwatch/bookkeeping/files/" + file;
 
-                    // Check extension
+                // Cleanup previous Linked Declarations
+                const existingDecls = fileContainer.parentElement.querySelectorAll('.linked-declarations-list');
+                existingDecls.forEach(el => el.remove());
+
+                if (file && file !== 'None') {
+                    const url = "/cardwatch/bookkeeping/files/" + file;
                     const ext = file.split('.').pop().toLowerCase();
                     if (['jpg', 'jpeg', 'png', 'gif'].includes(ext)) {
                         fileContainer.innerHTML = `<a href="${url}" target="_blank"><img src="${url}" class="img-fluid rounded border" style="max-height: 300px;"></a>`;
@@ -593,9 +638,7 @@
                     fileContainer.textContent = "No attachment.";
                 }
 
-                // --- Linked Declarations ---
-                // We need to pass this data via data attributes.
-                // Updating generation of data-declarations in the loop first
+                // Linked Declarations
                 const declarations = JSON.parse(this.dataset.declarations || '[]');
                 if (declarations.length > 0) {
                     let declHtml = '<h6 class="mt-3">Linked Declarations:</h6><ul class="list-group list-group-flush">';
@@ -603,20 +646,20 @@
                         const fileLink = d.file ? `/cardwatch/bookkeeping/files/${d.file}` : '#';
                         const fileLabel = d.file ? '📎 View File' : 'No File';
                         declHtml += `
-                            <li class="list-group-item d-flex justify-content-between align-items-center ps-0">
-                                <div>${d.desc} (${d.amount.toFixed(2)} ${d.currency})</div>
-                                ${d.file ? `<a href="${fileLink}" target="_blank" class="btn btn-sm btn-outline-secondary">${fileLabel}</a>` : ''}
-                            </li>
-                        `;
+                        <li class="list-group-item d-flex justify-content-between align-items-center ps-0">
+                            <div>${d.desc} (${d.amount.toFixed(2)} ${d.currency})</div>
+                            ${d.file ? `<a href="${fileLink}" target="_blank" class="btn btn-sm btn-outline-secondary">${fileLabel}</a>` : ''}
+                        </li>`;
                     });
                     declHtml += '</ul>';
-                    fileContainer.insertAdjacentHTML('afterend', declHtml);
-                    // Note: This appends after file container. 
-                    // Ideally we should have a dedicated container in the HTML but this works for now.
-                }
-                // ---------------------------
 
-                // Items
+                    const declContainer = document.createElement('div');
+                    declContainer.className = 'linked-declarations-list';
+                    declContainer.innerHTML = declHtml;
+                    fileContainer.insertAdjacentElement('afterend', declContainer);
+                }
+
+                // Items Logic
                 const itemsData = JSON.parse(this.dataset.items || '[]');
                 const itemsSection = document.getElementById('itemsSection');
                 const itemsTableHead = document.querySelector('#itemsSection thead tr');
@@ -633,7 +676,7 @@
                             <th class="text-end">Price (excl. Tax)</th>
                             <th class="text-end">Tax (8.1%) & Fees</th>
                             <th class="text-end">Total (incl. Tax)</th>
-                         `;
+                        `;
 
                         itemsData.forEach(item => {
                             const total = item.price + item.extra;
@@ -641,12 +684,12 @@
                             const tax = total - preTax;
 
                             itemsBody.innerHTML += `
-                                <tr>
-                                    <td>${item.name}</td>
-                                    <td class="text-end">${preTax.toFixed(2)}</td>
-                                    <td class="text-end">${tax.toFixed(2)}</td>
-                                    <td class="text-end">${total.toFixed(2)}</td>
-                                </tr>
+                            <tr>
+                                <td>${item.name}</td>
+                                <td class="text-end">${preTax.toFixed(2)}</td>
+                                <td class="text-end">${tax.toFixed(2)}</td>
+                                <td class="text-end">${total.toFixed(2)}</td>
+                            </tr>
                             `;
                         });
                     } else {
@@ -658,11 +701,11 @@
                         `;
                         itemsData.forEach(item => {
                             itemsBody.innerHTML += `
-                                <tr>
-                                    <td>${item.name}</td>
-                                    <td class="text-end">${item.price.toFixed(2)}</td>
-                                    <td class="text-end">${item.extra.toFixed(2)}</td>
-                                </tr>
+                            <tr>
+                                <td>${item.name}</td>
+                                <td class="text-end">${item.price.toFixed(2)}</td>
+                                <td class="text-end">${item.extra.toFixed(2)}</td>
+                            </tr>
                             `;
                         });
                     }
@@ -674,6 +717,67 @@
             });
         });
     });
+
+    function uploadReceipt(input) {
+        if (!input.files || !input.files[0]) return;
+
+        const file = input.files[0];
+        const formData = new FormData();
+        formData.append("receipt", file);
+
+        const btn = document.querySelector('button[onclick*="receiptInput"]');
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '⏳ Scanning...';
+        btn.disabled = true;
+
+        fetch('/cardwatch/bookkeeping/scan-receipt', {
+            method: 'POST',
+            body: formData
+        })
+            .then(response => response.json())
+            .then(data => {
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+                input.value = '';
+
+                if (data.success) {
+                    const modalEl = document.getElementById('addEntryModal');
+                    const modal = new bootstrap.Modal(modalEl);
+                    modal.show();
+
+                    const result = data.data;
+                    const form = modalEl.querySelector('form');
+
+                    if (result.date) form.querySelector('input[name="date"]').value = result.date;
+                    if (result.amount) form.querySelector('input[name="amount"]').value = result.amount;
+
+                    if (result.currency) {
+                        const sel = form.querySelector('select[name="currency"]');
+                        if (result.currency === 'CHF') sel.value = 'CHF';
+                        else sel.value = 'EUR';
+                    }
+
+                    // Hidden file
+                    document.getElementById('addEntryExistingFile').value = data.filename;
+
+                    // Msg
+                    const msgDiv = document.getElementById('scanMsg');
+                    if (msgDiv) {
+                        msgDiv.textContent = `Receipt scanned! Attached. Date: ${result.date || '?'}, Amt: ${result.amount || '?'}`;
+                        msgDiv.classList.remove('d-none');
+                    }
+
+                } else {
+                    alert("Scan failed: " + data.error);
+                }
+            })
+            .catch(err => {
+                console.error(err);
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+                alert("Error scanning receipt.");
+            });
+    }
 </script>
 
 <style>
