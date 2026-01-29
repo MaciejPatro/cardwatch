@@ -2,7 +2,7 @@ import json
 import os
 import asyncio
 
-from flask import Flask, render_template, request, redirect, url_for, jsonify, flash
+from flask import Flask, render_template, request, redirect, url_for, jsonify, flash, send_from_directory
 from sqlalchemy import func
 from db import (
     init_db,
@@ -18,6 +18,7 @@ from db import (
     PSA10Offer,
     BookkeepingEntry,
     Item,
+    BookkeepingItem,
 )
 from scraper import (
     schedule_hourly,
@@ -43,8 +44,12 @@ configure_logging(app)
 SINGLE_CARD_UPLOAD_FOLDER = os.path.join(app.config['MEDIA_ROOT'], "single_card_images")
 os.makedirs(SINGLE_CARD_UPLOAD_FOLDER, exist_ok=True)
 
-BOOKKEEPING_UPLOAD_FOLDER = os.path.join(app.config['MEDIA_ROOT'], "invoices")
+BOOKKEEPING_UPLOAD_FOLDER = "/home/mpatro/projects/cardwatch/bookkeeping"
 os.makedirs(BOOKKEEPING_UPLOAD_FOLDER, exist_ok=True)
+
+@app.route("/cardwatch/bookkeeping/files/<path:filename>")
+def bookkeeping_file(filename):
+    return send_from_directory(BOOKKEEPING_UPLOAD_FOLDER, filename)
 
 init_db()
 if not app.config.get("CARDWATCH_DISABLE_SCHEDULER") and (
@@ -959,19 +964,15 @@ def add_bookkeeping_entry():
         ext = os.path.splitext(file.filename)[1]
         filename = f"{uuid.uuid4().hex}{ext}"
         
-        # Organization: invoices/year/month/
-        entry_date = datetime.strptime(date_str, "%Y-%m-%d").date()
-        subfolder = os.path.join(str(entry_date.year), str(entry_date.month)) # careful with 1 vs 01, str(int) is no padding
+        # Organization: Flat structure in bookkeeping folder
+        # entry_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+        # subfolder = os.path.join(str(entry_date.year), str(entry_date.month))
         
-        abs_folder = os.path.join(BOOKKEEPING_UPLOAD_FOLDER, subfolder)
-        os.makedirs(abs_folder, exist_ok=True)
-        
-        save_path = os.path.join(abs_folder, filename)
+        save_path = os.path.join(BOOKKEEPING_UPLOAD_FOLDER, filename)
         file.save(save_path)
         
-        # Store relative path for serving if needed, or just relative to MEDIA_ROOT
-        # or relative to invoices folder. Let's store relative to MEDIA_ROOT, so "invoices/2025/1/file.pdf"
-        file_path = os.path.join("invoices", subfolder, filename)
+        # Store relative path for serving
+        file_path = filename
 
     with get_db_session() as s:
         entry = BookkeepingEntry(
@@ -990,6 +991,63 @@ def add_bookkeeping_entry():
         s.commit()
         
     return redirect(url_for('bookkeeping', year=entry.date.year, month=entry.date.month))
+
+
+@app.route("/cardwatch/bookkeeping/edit/<int:entry_id>", methods=["POST"])
+def edit_bookkeeping_entry(entry_id):
+    with get_db_session() as s:
+        entry = s.get(BookkeepingEntry, entry_id)
+        if not entry:
+            flash("Entry not found.", "danger")
+            return redirect(url_for('bookkeeping'))
+
+        date_str = request.form.get("date")
+        entry_type = request.form.get("entry_type") 
+        description = request.form.get("description")
+        amount = float(request.form.get("amount", 0.0))
+        currency = request.form.get("currency") 
+        rate = float(request.form.get("exchange_rate", 1.0))
+        is_private = "is_private_collection" in request.form
+        market_value = request.form.get("market_value")
+        market_value = float(market_value) if market_value else None
+
+        # Calculate amounts
+        amount_eur = 0.0
+        amount_chf = 0.0
+        if currency == 'EUR':
+            amount_eur = amount
+            amount_chf = amount * rate
+        else:
+            amount_chf = amount
+            amount_eur = amount / rate if rate > 0 else 0
+
+        # File Handling
+        file = request.files.get("invoice")
+        if file and file.filename:
+            import uuid
+            ext = os.path.splitext(file.filename)[1]
+            filename = f"{uuid.uuid4().hex}{ext}"
+            
+            save_path = os.path.join(BOOKKEEPING_UPLOAD_FOLDER, filename)
+            file.save(save_path)
+            
+            # If replacing an old file, we *could* delete it, but let's keep it safe for now 
+            # or maybe delete if it was a uuid-generated one.
+            entry.file_path = filename
+
+        # Update Entry
+        entry.date = datetime.strptime(date_str, "%Y-%m-%d").date()
+        entry.entry_type = entry_type
+        entry.description = description
+        entry.amount_eur = amount_eur
+        entry.amount_chf = amount_chf
+        entry.original_currency = currency
+        entry.exchange_rate = rate
+        entry.is_private_collection = 1 if is_private else 0
+        entry.market_value = market_value
+        
+        s.commit()
+        return redirect(url_for('bookkeeping', year=entry.date.year, month=entry.date.month))
 
 
 @app.route("/cardwatch/bookkeeping/upload-invoice", methods=["POST"])
@@ -1035,18 +1093,16 @@ def confirm_invoice():
     if not os.path.exists(temp_path):
         return jsonify({"success": False, "error": "Temp file lost"}), 400
         
-    date_str = data.get("date", datetime.now().strftime("%Y-%m-%d"))
-    entry_date = datetime.strptime(date_str, "%Y-%m-%d").date()
-    
-    subfolder = os.path.join(str(entry_date.year), str(entry_date.month))
-    abs_folder = os.path.join(BOOKKEEPING_UPLOAD_FOLDER, subfolder)
-    os.makedirs(abs_folder, exist_ok=True)
-    
-    final_path = os.path.join(abs_folder, temp_filename)
+    # Move file from temp to root
+    final_path = os.path.join(BOOKKEEPING_UPLOAD_FOLDER, temp_filename)
     os.rename(temp_path, final_path)
     
     # Relative path for DB
-    file_path = os.path.join("invoices", subfolder, temp_filename)
+    file_path = temp_filename
+    
+    # Defaults (adjust logic if needed)
+    import_tax = 0.0
+    needs_decl = 0
     
     # DB Operations
     with get_db_session() as s:
@@ -1055,22 +1111,15 @@ def confirm_invoice():
             date=entry_date,
             entry_type="cost",
             description=f"Invoice {data.get('order_id')} - {data.get('seller_name')}",
-            amount_eur=data.get("total_amount"),
-            amount_chf=0.0, # Assuming invoice is EUR, logic for rate?
+            amount_eur=data.get("total_amount") + import_tax,
+            amount_chf=0.0,
             original_currency=data.get("currency", "EUR"), 
-            # We don't have rate in PDF usually. Default to 1.0 or user should have provided?
-            # For simplicity let's stick to 1.0 for now or fetch recent rate?
-            # User request didn't specify. We will default to 1.0 logic from before:
-            exchange_rate=0.95,  # Placeholder default, maybe should accept from frontend
+            exchange_rate=0.95,  
             file_path=file_path,
-            is_private_collection=0
+            is_private_collection=0,
+            needs_import_declaration=needs_decl
         )
         
-        # Calculate CHF roughly or keep 0 and user edits?
-        # Let's use the 0.95 hardcoded or pass from frontend if we added a field in the modal.
-        # Ideally frontend modal should calculate it. 
-        # But here we are confirming auto-parsed data.
-        # Let's check if req has rate.
         rate = float(req.get("exchange_rate", 0.95))
         bk_entry.exchange_rate = rate
         if bk_entry.original_currency == 'EUR':
@@ -1084,32 +1133,23 @@ def confirm_invoice():
         # 2. Create Items
         items_data = data.get("items", [])
         total_items_price = sum(i["price"] for i in items_data)
-        total_shipping_vat = data.get("shipping_cost", 0) + data.get("vat_cost", 0)
+        # Extra costs included import tax + Trustee
+        total_extra = data.get("shipping_cost", 0) + data.get("vat_cost", 0) + data.get("trustee_fee", 0) + import_tax
         
         for item in items_data:
-            # Distribute shipping/vat proportionally by value?
-            # Logic: (item_price / total_items_price) * total_shipping
-            # Handle div by zero
             share = 0
             if total_items_price > 0:
-                share = (item["price"] / total_items_price) * total_shipping_vat
+                share = (item["price"] / total_items_price) * total_extra
             else:
-                # split evenly?
-                share = total_shipping_vat / len(items_data) if items_data else 0
+                share = total_extra / len(items_data) if items_data else 0
                 
-            db_item = Item(
+            db_item = BookkeepingItem(
                 name=item["name"],
-                buy_date=entry_date,
                 price=item["price"],
                 currency=data.get("currency", "EUR"),
                 extra_costs=share,
                 external_id=data.get("order_id"),
-                bookkeeping_id=bk_entry.id,
-                
-                # Defaults
-                category="Active",
-                graded=0,
-                not_for_sale=0
+                bookkeeping_id=bk_entry.id
             )
             s.add(db_item)
             
@@ -1126,14 +1166,9 @@ def delete_bookkeeping_entry(entry_id):
     with get_db_session() as s:
         entry = s.query(BookkeepingEntry).filter_by(id=entry_id).first()
         if entry:
-            # Unlink items (set bookkeeping_id to NULL)
-            items = s.query(Item).filter_by(bookkeeping_id=entry.id).all()
-            for item in items:
-                item.bookkeeping_id = None
-                
-            # If file attached, we could delete it, but maybe keep it safe?
-            # User didn't specify. Let's keep file for now to avoid data loss.
-            
+            # Cascade delete is configured in db.py for BookkeepingItem
+            # items = s.query(BookkeepingItem).filter_by(bookkeeping_id=entry.id).all()
+            # s.delete(items)... not needed if cascade works, but let's trust SQLAlchemy
             s.delete(entry)
             s.commit()
             
@@ -1222,40 +1257,98 @@ def export_bookkeeping_pdf():
             # Let's add a second table for Stock Items acquired this month
             
             elements.append(Spacer(1, 24))
-            elements.append(Paragraph("Stock Items Acquired", styles['Heading2']))
             
-            items = s.query(Item).filter(
-                func.extract('year', Item.buy_date) == year,
-                func.extract('month', Item.buy_date) == month
+            # --- Stock Items Categorization ---
+            
+            # Fetch all items with their entry type
+            items = s.query(BookkeepingItem, BookkeepingEntry).join(BookkeepingEntry).filter(
+                func.extract('year', BookkeepingEntry.date) == year,
+                func.extract('month', BookkeepingEntry.date) == month
             ).all()
+
+            private_items = []
+            bought_items = []
+            sold_items = []
             
-            if items:
-                item_data = [['Buying Date', 'Name', 'Price', 'Extra Costs (Ship/Tax)', 'Total Cost']]
-                for i in items:
-                    total_cost = i.price + (i.extra_costs or 0)
-                    item_data.append([
-                        i.buy_date.strftime("%Y-%m-%d"),
+            for item, entry in items:
+                if entry.entry_type == 'gain':
+                    sold_items.append(item)
+                elif entry.entry_type == 'cost':
+                    if entry.is_private_collection:
+                        private_items.append(item)
+                    else:
+                        bought_items.append(item)
+            
+            # Helper to draw a table
+            def add_item_table(title, item_list):
+                if not item_list:
+                    # elements.append(Paragraph(f"{title}: None", styles['Normal']))
+                    # elements.append(Spacer(1, 12))
+                    return
+
+                elements.append(Paragraph(title, styles['Heading3']))
+                t_data = [['Name', 'Price', 'Extra', 'Total']]
+                for i in item_list:
+                    tc = i.price + (i.extra_costs or 0)
+                    t_data.append([
                         i.name[:60],
                         f"{i.price:.2f} {i.currency}",
                         f"{i.extra_costs:.2f}",
-                        f"{total_cost:.2f}"
+                        f"{tc:.2f}"
                     ])
                 
-                item_table = Table(item_data)
-                item_table.setStyle(TableStyle([
-                     ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
-                     ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-                     ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                t = Table(t_data)
+                t.setStyle(TableStyle([
+                    ('BACKGROUND', (0,0), (-1,0), colors.lightgrey),
+                    ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
+                    ('FONTSIZE', (0,0), (-1,-1), 8),
                 ]))
-                elements.append(item_table)
-            else:
-                elements.append(Paragraph("No stock items acquired this month.", styles['Normal']))
+                elements.append(t)
+                elements.append(Spacer(1, 12))
+
+            add_item_table("Stock items from private collection:", private_items)
+            add_item_table("Stock items acquired (bought):", bought_items)
+            add_item_table("Stock items sold:", sold_items)
+            
+            # In Possession Calculation
+            # "In Possession" = (Bought + Private) - Sold (matched by name? or just count?)
+            # Since we don't track unique IDs across transactions perfectly, we just do a reconcilation.
+            # Strategy: Create a list of all acquired. For each sold item, remove one matching name from acquired.
+            
+            acquired_pool = list(private_items + bought_items)
+            in_possession = []
+            
+            # We urge to match sold items against acquired pool
+            # copy pool to modify
+            pool_map = []
+            for i in acquired_pool:
+                pool_map.append(i)
+                
+            for sold in sold_items:
+                # Find a match in pool
+                found = None
+                for candidate in pool_map:
+                    # Loose matching by name
+                    if candidate.name.strip() == sold.name.strip():
+                        found = candidate
+                        break
+                
+                if found:
+                    pool_map.remove(found)
+                else:
+                    # Sold something not bought this month? 
+                    # Yes, possible. So "In Possession" only reflects items bought THIS month and remaining.
+                    pass
+            
+            in_possession = pool_map
+            add_item_table("Stock items in possession (from this month's activity):", in_possession)
+
 
         doc.build(elements)
         buffer.seek(0)
         
         from flask import send_file
-        return send_file(buffer, as_attachment=True, download_name=f"Bookkeeping_{year}_{month}.pdf", mimetype='application/pdf')
+        return send_file(buffer, as_attachment=False, download_name=f"Bookkeeping_{year}_{month}.pdf", mimetype='application/pdf')
         
     except ImportError:
         return "ReportLab is not installed.", 500
@@ -1266,3 +1359,23 @@ def export_bookkeeping_pdf():
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
 
+
+@app.route("/cardwatch/bookkeeping/toggle-declaration/<int:entry_id>", methods=["POST"])
+def toggle_declaration(entry_id):
+    with get_db_session() as s:
+        entry = s.query(BookkeepingEntry).get(entry_id)
+        if not entry:
+            flash("Entry not found.", "danger")
+            return redirect(url_for('bookkeeping'))
+            
+        # Toggle
+        if entry.import_declaration_filed == 1:
+            entry.import_declaration_filed = 0
+            msg = "Declaration marked as pending."
+        else:
+            entry.import_declaration_filed = 1
+            msg = "Declaration marked as filed."
+            
+        s.commit()
+        flash(msg, "success")
+        return redirect(url_for('bookkeeping', year=entry.date.year, month=entry.date.month))

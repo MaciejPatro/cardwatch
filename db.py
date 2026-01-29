@@ -146,12 +146,12 @@ class Item(Base):
     category = Column(String, default="Active")
     card_id = Column(Integer, nullable=True)
     
-    # New columns for Invoice Parsing & accurate costs
-    extra_costs = Column(Float, nullable=False, default=0.0)
-    external_id = Column(String, nullable=True) # e.g. Cardmarket Order ID
-    bookkeeping_id = Column(Integer, ForeignKey("bookkeeping_entries.id"), nullable=True)
+    # Old columns for Invoice Parsing (Deprecated, moving to BookkeepingItem)
+    # extra_costs = Column(Float, nullable=False, default=0.0)
+    # external_id = Column(String, nullable=True) 
+    # bookkeeping_id = Column(Integer, ForeignKey("bookkeeping_entries.id"), nullable=True)
     
-    bookkeeping_entry = relationship("BookkeepingEntry", backref="items")
+    # bookkeeping_entry = relationship("BookkeepingEntry", backref="items")
 
 
 class PSA10Price(Base):
@@ -194,6 +194,28 @@ class BookkeepingEntry(Base):
     is_private_collection = Column(Integer, default=0) # 0 or 1
     market_value = Column(Float, nullable=True)
     
+    needs_import_declaration = Column(Integer, default=0) # 0 or 1
+    import_declaration_filed = Column(Integer, default=0) # 0 or 1
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    items = relationship("BookkeepingItem", backref="entry", cascade="all, delete-orphan")
+
+
+class BookkeepingItem(Base):
+    """Inventory items specifically for Bookkeeping (financial stock)."""
+    __tablename__ = "bookkeeping_items"
+    
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)
+    
+    price = Column(Float, nullable=False, default=0.0) # Line Item Price
+    extra_costs = Column(Float, nullable=False, default=0.0) # Allocated Ship/Tax
+    currency = Column(String, nullable=False, default='EUR')
+    
+    external_id = Column(String, nullable=True) # e.g. Cardmarket Order ID
+    
+    bookkeeping_id = Column(Integer, ForeignKey("bookkeeping_entries.id"), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 

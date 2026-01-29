@@ -1,0 +1,659 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row mb-4 align-items-center">
+    <div class="col-md-8">
+        <h2>Bookkeeping 📚</h2>
+        <div class="btn-group" role="group">
+            <a href="{{ url_for('bookkeeping', year=year-1, month=month) }}" class="btn btn-outline-secondary">&laquo;
+                Next Year</a>
+            <a href="{{ url_for('bookkeeping', year=year, month=month-1 if month > 1 else 12) if month > 1 else url_for('bookkeeping', year=year-1, month=12) }}"
+                class="btn btn-outline-secondary">&lt; Month</a>
+            <button type="button" class="btn btn-secondary disabled">{{ year }} - {{ month }}</button>
+            <a href="{{ url_for('bookkeeping', year=year, month=month+1) if month < 12 else url_for('bookkeeping', year=year+1, month=1) }}"
+                class="btn btn-outline-secondary">Month &gt;</a>
+            <a href="{{ url_for('bookkeeping', year=year+1, month=month) }}" class="btn btn-outline-secondary">Year
+                &raquo;</a>
+        </div>
+    </div>
+    <div class="col-md-4 text-end">
+        <a href="{{ url_for('export_bookkeeping_pdf', year=year, month=month) }}" class="btn btn-warning me-2"
+            target="_blank">
+            🖨️ PDF
+        </a>
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addEntryModal">
+            + Add Entry
+        </button>
+        <button class="btn btn-success ms-2" data-bs-toggle="modal" data-bs-target="#uploadInvoiceModal">
+            📄 Auto-Add from Invoice
+        </button>
+    </div>
+</div>
+
+<div class="table-responsive">
+    <table class="table table-hover">
+        <thead>
+            <tr>
+                <th>Date</th>
+                <th>Description</th>
+                <th class="text-end">Amount (EUR)</th>
+                <th class="text-end">Amount (CHF)</th>
+                <th class="text-center">Type</th>
+                <th class="text-center">Pvt. Col.</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for entry in entries %}
+            <tr class="cursor-pointer {% if entry.is_private_collection %}table-secondary{% elif entry.entry_type == 'cost' %}table-danger{% else %}table-success{% endif %} entry-row"
+                data-id="{{ entry.id }}" data-date="{{ entry.date }}" data-type="{{ entry.entry_type }}"
+                data-desc="{{ entry.description }}" data-eur="{{ entry.amount_eur }}" data-chf="{{ entry.amount_chf }}"
+                data-rate="{{ entry.exchange_rate }}" data-file="{{ entry.file_path or '' }}"
+                data-private="{{ entry.is_private_collection }}" data-market="{{ entry.market_value or '' }}"
+                data-needs_decl="{{ entry.needs_import_declaration }}"
+                data-decl_filed="{{ entry.import_declaration_filed }}" data-items='[
+                    {% for item in entry.items %}
+                        {"name": "{{ item.name }}", "price": {{ item.price }}, "extra": {{ item.extra_costs }}}
+                        {% if not loop.last %},{% endif %}
+                    {% endfor %}
+                ]'>
+                <td>{{ entry.date }}</td>
+                <td>
+                    {{ entry.description|truncate(50) }}
+                    {% if entry.file_path %}
+                    <div class="small">
+                        <a href="{{ url_for('bookkeeping_file', filename=entry.file_path) }}" target="_blank"
+                            onclick="event.stopPropagation()">
+                            📎 {{ entry.file_path.split('/')[-1] }}
+                        </a>
+                    </div>
+                    {% endif %}
+                </td>
+                <td class="text-end">{{ "%.2f"|format(entry.amount_eur) }}</td>
+                <td class="text-end">{{ "%.2f"|format(entry.amount_chf) }}</td>
+                <td class="text-center">
+                    {% if entry.is_private_collection %}
+                    <span class="badge bg-secondary">Private</span>
+                    {% elif entry.entry_type == 'cost' %}
+                    <span class="badge bg-danger">Cost</span>
+                    {% if entry.needs_import_declaration %}
+                    {% if entry.import_declaration_filed %}
+                    <br><span class="badge bg-success" title="Declaration Filed">✅ Declared</span>
+                    {% else %}
+                    <br><span class="badge bg-warning text-dark" title="Import Declaration Missing">⚠️
+                        Declaration</span>
+                    {% endif %}
+                    {% endif %}
+                    {% else %}
+                    <span class="badge bg-success">Gain</span>
+                    {% endif %}
+                </td>
+                <td class="text-center">
+                    {% if entry.is_private_collection %}
+                    <span class="badge bg-info text-dark">Yes</span>
+                    {% endif %}
+                </td>
+                <td>
+                <td>
+                    <div class="d-flex gap-2">
+                        {% if entry.file_path %}
+                        <!-- File link moved to description column -->
+                        {% endif %}
+                        <form action="{{ url_for('delete_bookkeeping_entry', entry_id=entry.id) }}" method="POST"
+                            onsubmit="return confirm('Are you sure? This will unlink any stock items.');">
+                            <button type="submit" class="btn btn-link p-0 text-danger"
+                                onclick="event.stopPropagation()">🗑️</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="7" class="text-center text-muted">No entries for this month.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<!-- Add Entry Modal -->
+<div class="modal fade" id="addEntryModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form action="{{ url_for('add_bookkeeping_entry') }}" method="POST" enctype="multipart/form-data">
+                <div class="modal-header">
+                    <h5 class="modal-title">Add Bookkeeping Entry</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Date</label>
+                        <input type="date" name="date" class="form-control" required
+                            value="{{ '%04d-%02d-%02d' % (year, month, 1) }}">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Type</label>
+                        <select name="entry_type" class="form-select" required>
+                            <option value="cost">Cost</option>
+                            <option value="gain">Gain</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Description</label>
+                        <textarea name="description" class="form-control" rows="2"></textarea>
+                    </div>
+                    <div class="row">
+                        <div class="col-6 mb-3">
+                            <label class="form-label">Amount</label>
+                            <input type="number" step="0.01" name="amount" class="form-control" required>
+                        </div>
+                        <div class="col-6 mb-3">
+                            <label class="form-label">Currency</label>
+                            <select name="currency" class="form-select" required>
+                                <option value="EUR">EUR</option>
+                                <option value="CHF">CHF</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Exchange Rate (CHF/EUR)</label>
+                        <input type="number" step="0.0001" name="exchange_rate" class="form-control" value="0.95"
+                            required>
+                        <div class="form-text">Example: 1 EUR = X CHF</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Invoice / Receipt</label>
+                        <input type="file" name="invoice" class="form-control">
+                    </div>
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" name="is_private_collection" id="isPrivate"
+                            onchange="toggleMarketValue()">
+                        <label class="form-check-label" for="isPrivate">
+                            From Private Collection
+                        </label>
+                    </div>
+                    <div class="mb-3 d-none" id="marketValueDiv">
+                        <label class="form-label">Market Value (EUR)</label>
+                        <input type="number" step="0.01" name="market_value" class="form-control">
+                        <div class="form-text">Value from PriceCharting / CardMarket</div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="submit" class="btn btn-primary">Save Entry</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Details Modal -->
+<div class="modal fade" id="detailsModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Entry Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <p><strong>Date:</strong> <span id="detailDate"></span></p>
+                        <p><strong>Type:</strong> <span id="detailType"></span></p>
+                        <p><strong>Description:</strong> <span id="detailDesc"></span></p>
+                        <p><strong>EUR:</strong> <span id="detailEur"></span></p>
+                        <p><strong>CHF:</strong> <span id="detailChf"></span></p>
+                        <p><strong>Ex. Rate:</strong> <span id="detailRate"></span></p>
+                    </div>
+                    <div class="col-md-6">
+                        <p><strong>Private Collection:</strong> <span id="detailPrivate"></span></p>
+                        <p id="detailMarketValP" class="d-none"><strong>Market Value:</strong> <span
+                                id="detailMarketVal"></span></p>
+
+                        <!-- Declaration Status -->
+                        <div id="declarationSection" class="mb-3 d-none">
+                            <strong>Declaration Status:</strong> <span id="declStatusBadge"></span>
+                            <form id="declForm" action="" method="POST"
+                                style="display:inline-block; margin-left: 10px;">
+                                <button type="submit" class="btn btn-sm btn-outline-success" id="btnToggleDecl">Mark as
+                                    Declared</button>
+                            </form>
+                        </div>
+
+                        <div id="filePreview" class="mt-3">
+                            <h6>Attachment:</h6>
+                            <div id="fileLinkContainer"></div>
+                        </div>
+                    </div>
+                    <div class="col-12 mt-3 d-none" id="itemsSection">
+                        <h6>Stock Items:</h6>
+                        <table class="table table-sm table-bordered">
+                            <thead>
+                                <tr>
+                                    <th>Item</th>
+                                    <th class="text-end">Price</th>
+                                    <th class="text-end">Extra Costs</th>
+                                </tr>
+                            </thead>
+                            <tbody id="itemsTableBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+</div>
+
+<!-- Edit Entry Modal -->
+<div class="modal fade" id="editEntryModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form id="editEntryForm" action="" method="POST" enctype="multipart/form-data">
+                <div class="modal-header">
+                    <h5 class="modal-title">Edit Bookkeeping Entry</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Date</label>
+                        <input type="date" name="date" id="editDate" class="form-control" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Type</label>
+                        <select name="entry_type" id="editType" class="form-select" required>
+                            <option value="cost">Cost</option>
+                            <option value="gain">Gain</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Description</label>
+                        <textarea name="description" id="editDesc" class="form-control" rows="2"></textarea>
+                    </div>
+                    <div class="row">
+                        <div class="col-6 mb-3">
+                            <label class="form-label">Amount</label>
+                            <input type="number" step="0.01" name="amount" id="editAmount" class="form-control"
+                                required>
+                        </div>
+                        <div class="col-6 mb-3">
+                            <label class="form-label">Currency</label>
+                            <select name="currency" id="editCurrency" class="form-select" required>
+                                <option value="EUR">EUR</option>
+                                <option value="CHF">CHF</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Exchange Rate (CHF/EUR)</label>
+                        <input type="number" step="0.0001" name="exchange_rate" id="editRate" class="form-control"
+                            required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Invoice / Receipt</label>
+                        <input type="file" name="invoice" class="form-control">
+                        <div class="form-text" id="editCurrentFile"></div>
+                    </div>
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" name="is_private_collection" id="editIsPrivate"
+                            onchange="toggleEditMarketValue()">
+                        <label class="form-check-label" for="editIsPrivate">
+                            From Private Collection
+                        </label>
+                    </div>
+                    <div class="mb-3 d-none" id="editMarketValueDiv">
+                        <label class="form-label">Market Value (EUR)</label>
+                        <input type="number" step="0.01" name="market_value" id="editMarketValue" class="form-control">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="submit" class="btn btn-primary">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    function toggleMarketValue() {
+        const isChecked = document.getElementById('isPrivate').checked;
+        const div = document.getElementById('marketValueDiv');
+        if (isChecked) {
+            div.classList.remove('d-none');
+        } else {
+            div.classList.add('d-none');
+        }
+    }
+
+    function toggleEditMarketValue() {
+        const isChecked = document.getElementById('editIsPrivate').checked;
+        const div = document.getElementById('editMarketValueDiv');
+        if (isChecked) {
+            div.classList.remove('d-none');
+        } else {
+            div.classList.add('d-none');
+        }
+    }
+
+    function openEditModal(row) {
+        // Populate Data
+        const id = row.dataset.id;
+        const date = row.dataset.date;
+        const type = row.dataset.type;
+        const desc = row.dataset.desc;
+        const currency = row.dataset.currency || 'EUR';
+        const rate = row.dataset.rate;
+        const file = row.dataset.file;
+        const isPrivate = (row.dataset.private === '1' || row.dataset.private === 'True');
+        const marketVal = row.dataset.market;
+
+        document.getElementById('editDate').value = date;
+        document.getElementById('editType').value = type;
+        document.getElementById('editDesc').value = desc;
+        document.getElementById('editCurrency').value = currency;
+        document.getElementById('editRate').value = rate;
+
+        // Amount depends on currency
+        const eur = parseFloat(row.dataset.eur);
+        const chf = parseFloat(row.dataset.chf);
+        document.getElementById('editAmount').value = (currency === 'EUR' ? eur : chf).toFixed(2);
+
+        document.getElementById('editIsPrivate').checked = isPrivate;
+        if (isPrivate) {
+            document.getElementById('editMarketValueDiv').classList.remove('d-none');
+            document.getElementById('editMarketValue').value = marketVal;
+        } else {
+            document.getElementById('editMarketValueDiv').classList.add('d-none');
+            document.getElementById('editMarketValue').value = '';
+        }
+
+        // File Label
+        const fileDiv = document.getElementById('editCurrentFile');
+        if (file && file !== 'None') {
+            fileDiv.textContent = `Current: ${file}`;
+        } else {
+            fileDiv.textContent = 'No current attachment.';
+        }
+
+        // Form Action
+        const form = document.getElementById('editEntryForm');
+        form.action = `/cardwatch/bookkeeping/edit/${id}`;
+
+        new bootstrap.Modal(document.getElementById('editEntryModal')).show();
+    }
+
+
+    document.addEventListener('DOMContentLoaded', function () {
+        const rows = document.querySelectorAll('.entry-row');
+        rows.forEach(row => {
+            row.addEventListener('click', function () {
+                const id = this.dataset.id;
+                const date = this.dataset.date;
+                const type = this.dataset.type;
+                const desc = this.dataset.desc;
+                const eur = this.dataset.eur;
+                const chf = this.dataset.chf;
+                const rate = this.dataset.rate;
+                const file = this.dataset.file;
+                const isPrivate = this.dataset.private;
+                const marketVal = this.dataset.market;
+                const needsDecl = (this.dataset.needs_decl === '1' || this.dataset.needs_decl === 'True');
+                const declFiled = (this.dataset.decl_filed === '1' || this.dataset.decl_filed === 'True');
+
+                document.getElementById('detailDate').textContent = date;
+                document.getElementById('detailType').textContent = type.toUpperCase();
+                document.getElementById('detailDesc').textContent = desc;
+                document.getElementById('detailEur').textContent = parseFloat(eur).toFixed(2);
+                document.getElementById('detailChf').textContent = parseFloat(chf).toFixed(2);
+                document.getElementById('detailRate').textContent = rate;
+
+                const isPriv = (isPrivate === '1' || isPrivate === 'True');
+                document.getElementById('detailPrivate').textContent = isPriv ? "Yes" : "No";
+
+                // Declaration Logic
+                const declSection = document.getElementById('declarationSection');
+                const declBadge = document.getElementById('declStatusBadge');
+                const declForm = document.getElementById('declForm');
+                const declBtn = document.getElementById('btnToggleDecl');
+
+                if (needsDecl) {
+                    declSection.classList.remove('d-none');
+                    // Set Form Action
+                    declForm.action = `/cardwatch/bookkeeping/toggle-declaration/${id}`;
+
+                    if (declFiled) {
+                        declBadge.innerHTML = '<span class="badge bg-success">Filed ✅</span>';
+                        declBtn.textContent = "Mark as Not Filed";
+                        declBtn.classList.remove('btn-outline-success');
+                        declBtn.classList.add('btn-outline-warning');
+                    } else {
+                        declBadge.innerHTML = '<span class="badge bg-warning text-dark">Pending ⚠️</span>';
+                        declBtn.textContent = "Mark as Declared";
+                        declBtn.classList.remove('btn-outline-warning');
+                        declBtn.classList.add('btn-outline-success');
+                    }
+                } else {
+                    declSection.classList.add('d-none');
+                }
+
+                if (isPriv && marketVal) {
+                    document.getElementById('detailMarketVal').textContent = parseFloat(marketVal).toFixed(2);
+                    document.getElementById('detailMarketValP').classList.remove('d-none');
+                } else {
+                    document.getElementById('detailMarketValP').classList.add('d-none');
+                }
+
+                const fileContainer = document.getElementById('fileLinkContainer');
+                fileContainer.innerHTML = '';
+                if (file && file !== 'None') {
+                    // Update to use the new route for bookkeeping files
+                    const url = "/cardwatch/bookkeeping/files/" + file;
+
+                    // Check extension
+                    const ext = file.split('.').pop().toLowerCase();
+                    if (['jpg', 'jpeg', 'png', 'gif'].includes(ext)) {
+                        fileContainer.innerHTML = `<a href="${url}" target="_blank"><img src="${url}" class="img-fluid rounded border" style="max-height: 300px;"></a>`;
+                    } else {
+                        fileContainer.innerHTML = `<a href="${url}" target="_blank" class="btn btn-outline-primary">Download / View File</a>`;
+                    }
+                } else {
+                    fileContainer.textContent = "No attachment.";
+                }
+
+                // Items
+                const itemsData = JSON.parse(this.dataset.items || '[]');
+                const itemsSection = document.getElementById('itemsSection');
+                const itemsTableHead = document.querySelector('#itemsSection thead tr');
+                const itemsBody = document.getElementById('itemsTableBody');
+                itemsBody.innerHTML = '';
+
+                if (itemsData.length > 0) {
+                    itemsSection.classList.remove('d-none');
+
+                    if (needsDecl) {
+                        // German Import Tax Layout
+                        itemsTableHead.innerHTML = `
+                            <th>Item</th>
+                            <th class="text-end">Price (excl. Tax)</th>
+                            <th class="text-end">Tax (8.1%) & Fees</th>
+                            <th class="text-end">Total (incl. Tax)</th>
+                         `;
+
+                        itemsData.forEach(item => {
+                            const total = item.price + item.extra;
+                            const preTax = total / 1.081;
+                            const tax = total - preTax;
+
+                            itemsBody.innerHTML += `
+                                <tr>
+                                    <td>${item.name}</td>
+                                    <td class="text-end">${preTax.toFixed(2)}</td>
+                                    <td class="text-end">${tax.toFixed(2)}</td>
+                                    <td class="text-end">${total.toFixed(2)}</td>
+                                </tr>
+                            `;
+                        });
+                    } else {
+                        // Standard Layout
+                        itemsTableHead.innerHTML = `
+                            <th>Item</th>
+                            <th class="text-end">Price</th>
+                            <th class="text-end">Extra Costs</th>
+                        `;
+                        itemsData.forEach(item => {
+                            itemsBody.innerHTML += `
+                                <tr>
+                                    <td>${item.name}</td>
+                                    <td class="text-end">${item.price.toFixed(2)}</td>
+                                    <td class="text-end">${item.extra.toFixed(2)}</td>
+                                </tr>
+                            `;
+                        });
+                    }
+                } else {
+                    itemsSection.classList.add('d-none');
+                }
+
+                new bootstrap.Modal(document.getElementById('detailsModal')).show();
+            });
+        });
+    });
+</script>
+
+<style>
+    .cursor-pointer {
+        cursor: pointer;
+    }
+</style>
+<!-- Upload Invoice Modal -->
+<div class="modal fade" id="uploadInvoiceModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Upload Cardmarket Invoice</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Upload a PDF invoice to automatically create a Bookkeeping Entry and Stock Items.</p>
+                <div class="mb-3">
+                    <label class="form-label">Invoice PDF</label>
+                    <input type="file" id="invoiceFile" class="form-control" accept=".pdf" required>
+                </div>
+                <div id="uploadError" class="alert alert-danger d-none"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" onclick="uploadInvoice()">Upload & Parse</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Confirm Invoice Modal -->
+<div class="modal fade" id="confirmInvoiceModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Confirm Invoice Data</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="parseResult"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-success" onclick="confirmInvoice()">Confirm & Save</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let parsedData = null;
+    let tempFilename = null;
+
+    function uploadInvoice() {
+        const fileInput = document.getElementById('invoiceFile');
+        const file = fileInput.files[0];
+        if (!file) return;
+
+        const formData = new FormData();
+        formData.append('invoice_file', file);
+
+        fetch("{{ url_for('upload_invoice') }}", {
+            method: 'POST',
+            body: formData
+        })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    parsedData = data.data;
+                    tempFilename = data.temp_filename;
+                    showConfirmation(parsedData);
+                    bootstrap.Modal.getInstance(document.getElementById('uploadInvoiceModal')).hide();
+                    new bootstrap.Modal(document.getElementById('confirmInvoiceModal')).show();
+                } else {
+                    document.getElementById('uploadError').textContent = data.error;
+                    document.getElementById('uploadError').classList.remove('d-none');
+                }
+            })
+            .catch(err => {
+                document.getElementById('uploadError').textContent = 'Error uploading file.';
+                document.getElementById('uploadError').classList.remove('d-none');
+            });
+    }
+
+    function showConfirmation(data) {
+        let html = `
+            <div class="row mb-3">
+                <div class="col-6"><strong>Order ID:</strong> ${data.order_id || 'N/A'}</div>
+                <div class="col-6"><strong>Date:</strong> ${data.date || 'N/A'}</div>
+                <div class="col-6"><strong>Seller:</strong> ${data.seller_name || 'N/A'}</div>
+                <div class="col-6"><strong>Total:</strong> ${data.total_amount} ${data.currency}</div>
+            </div>
+            <h6>Items Found (${data.items.length}):</h6>
+            <table class="table table-sm">
+                <thead><tr><th>Name</th><th>Price</th></tr></thead>
+                <tbody>
+        `;
+
+        data.items.forEach(item => {
+            html += `<tr><td>${item.name}</td><td>${item.price.toFixed(2)}</td></tr>`;
+        });
+
+        html += `
+                </tbody>
+            </table>
+            <div class="alert alert-info">
+                <strong>Analysis:</strong><br>
+                Items Total: ${data.items.reduce((a, b) => a + b.price, 0).toFixed(2)}<br>
+                Extra Costs (Ship+VAT): ${(data.shipping_cost + data.vat_cost).toFixed(2)}<br>
+                <em>Extra costs will be distributed to items.</em>
+            </div>
+        `;
+        document.getElementById('parseResult').innerHTML = html;
+    }
+
+    function confirmInvoice() {
+        if (!parsedData || !tempFilename) return;
+
+        fetch("{{ url_for('confirm_invoice') }}", {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                data: parsedData,
+                temp_filename: tempFilename
+            })
+        })
+            .then(response => response.json())
+            .then(res => {
+                if (res.success) {
+                    location.reload();
+                } else {
+                    alert("Error saving: " + res.error);
+                }
+            });
+    }
+</script>
+{% endblock %}
