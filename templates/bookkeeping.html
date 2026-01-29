@@ -5,20 +5,22 @@
     <div class="col-md-8">
         <h2>Bookkeeping 📚</h2>
         <div class="btn-group" role="group">
-            <a href="{{ url_for('bookkeeping', year=year-1, month=month) }}" class="btn btn-outline-secondary">&laquo;
+            <a href="{{ url_for('bookkeeping.bookkeeping', year=year-1, month=month) }}"
+                class="btn btn-outline-secondary">&laquo;
                 Next Year</a>
-            <a href="{{ url_for('bookkeeping', year=year, month=month-1 if month > 1 else 12) if month > 1 else url_for('bookkeeping', year=year-1, month=12) }}"
+            <a href="{{ url_for('bookkeeping.bookkeeping', year=year, month=month-1 if month > 1 else 12) if month > 1 else url_for('bookkeeping.bookkeeping', year=year-1, month=12) }}"
                 class="btn btn-outline-secondary">&lt; Month</a>
             <button type="button" class="btn btn-secondary disabled">{{ year }} - {{ month }}</button>
-            <a href="{{ url_for('bookkeeping', year=year, month=month+1) if month < 12 else url_for('bookkeeping', year=year+1, month=1) }}"
+            <a href="{{ url_for('bookkeeping.bookkeeping', year=year, month=month+1) if month < 12 else url_for('bookkeeping.bookkeeping', year=year+1, month=1) }}"
                 class="btn btn-outline-secondary">Month &gt;</a>
-            <a href="{{ url_for('bookkeeping', year=year+1, month=month) }}" class="btn btn-outline-secondary">Year
+            <a href="{{ url_for('bookkeeping.bookkeeping', year=year+1, month=month) }}"
+                class="btn btn-outline-secondary">Year
                 &raquo;</a>
         </div>
     </div>
     <div class="col-md-4 text-end">
-        <a href="{{ url_for('export_bookkeeping_pdf', year=year, month=month) }}" class="btn btn-warning me-2"
-            target="_blank">
+        <a href="{{ url_for('bookkeeping.export_bookkeeping_pdf', year=year, month=month) }}"
+            class="btn btn-warning me-2" target="_blank">
             🖨️ PDF
         </a>
         <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addEntryModal">
@@ -27,6 +29,23 @@
         <button class="btn btn-success ms-2" data-bs-toggle="modal" data-bs-target="#uploadInvoiceModal">
             📄 Auto-Add from Invoice
         </button>
+        <button class="btn btn-info ms-2" data-bs-toggle="modal" data-bs-target="#uploadRatesModal">
+            💱 Upload Rates
+        </button>
+    </div>
+</div>
+
+<div id="bulkToolbar" class="alert alert-info d-none d-flex align-items-center justify-content-between">
+    <div>
+        <span id="selectedCount">0</span> entries selected.
+    </div>
+    <div>
+        <button class="btn btn-sm btn-primary" onclick="openDeclarationModal()">
+            📦 Link / Create Declaration
+        </button>
+        <button class="btn btn-sm btn-secondary ms-2" onclick="openLinkModal()">
+            🔗 Link / Distribute
+        </button>
     </div>
 </div>
 
@@ -34,6 +53,7 @@
     <table class="table table-hover">
         <thead>
             <tr>
+                <th style="width: 40px;"><input type="checkbox" id="selectAll" class="form-check-input"></th>
                 <th>Date</th>
                 <th>Description</th>
                 <th class="text-end">Amount (EUR)</th>
@@ -51,19 +71,28 @@
                 data-rate="{{ entry.exchange_rate }}" data-file="{{ entry.file_path or '' }}"
                 data-private="{{ entry.is_private_collection }}" data-market="{{ entry.market_value or '' }}"
                 data-needs_decl="{{ entry.needs_import_declaration }}"
-                data-decl_filed="{{ entry.import_declaration_filed }}" data-items='[
+                data-decl_filed="{{ entry.import_declaration_filed }}" data-declarations='[
+                    {% for link in entry.declarations %}
+                        {"desc": "{{ link.target.description }}", "amount": {{ link.target.amount_eur if link.target.original_currency == "EUR" else link.target.amount_chf }}, "currency": "{{ link.target.original_currency }}", "file": "{{ link.target.file_path or "" }}"}
+                        {% if not loop.last %},{% endif %}
+                    {% endfor %}
+                ]' data-items='[
                     {% for item in entry.items %}
                         {"name": "{{ item.name }}", "price": {{ item.price }}, "extra": {{ item.extra_costs }}}
                         {% if not loop.last %},{% endif %}
                     {% endfor %}
                 ]'>
+                <td>
+                    <input type="checkbox" class="form-check-input entry-checkbox" value="{{ entry.id }}"
+                        onclick="event.stopPropagation(); updateToolbar();">
+                </td>
                 <td>{{ entry.date }}</td>
                 <td>
                     {{ entry.description|truncate(50) }}
                     {% if entry.file_path %}
                     <div class="small">
-                        <a href="{{ url_for('bookkeeping_file', filename=entry.file_path) }}" target="_blank"
-                            onclick="event.stopPropagation()">
+                        <a href="{{ url_for('bookkeeping.bookkeeping_file', filename=entry.file_path) }}"
+                            target="_blank" onclick="event.stopPropagation()">
                             📎 {{ entry.file_path.split('/')[-1] }}
                         </a>
                     </div>
@@ -99,8 +128,12 @@
                         {% if entry.file_path %}
                         <!-- File link moved to description column -->
                         {% endif %}
-                        <form action="{{ url_for('delete_bookkeeping_entry', entry_id=entry.id) }}" method="POST"
-                            onsubmit="return confirm('Are you sure? This will unlink any stock items.');">
+                        <button type="button" class="btn btn-link p-0 text-primary edit-btn"
+                            onclick="event.stopPropagation(); openEditModal(this.closest('tr'))">
+                            ✏️
+                        </button>
+                        <form action="{{ url_for('bookkeeping.delete_bookkeeping_entry', entry_id=entry.id) }}"
+                            method="POST" onsubmit="return confirm('Are you sure? This will unlink any stock items.');">
                             <button type="submit" class="btn btn-link p-0 text-danger"
                                 onclick="event.stopPropagation()">🗑️</button>
                         </form>
@@ -120,7 +153,8 @@
 <div class="modal fade" id="addEntryModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
-            <form action="{{ url_for('add_bookkeeping_entry') }}" method="POST" enctype="multipart/form-data">
+            <form action="{{ url_for('bookkeeping.add_bookkeeping_entry') }}" method="POST"
+                enctype="multipart/form-data">
                 <div class="modal-header">
                     <h5 class="modal-title">Add Bookkeeping Entry</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
@@ -326,6 +360,48 @@
         }
     }
 
+    // --- Bulk Selection Logic ---
+    function updateToolbar() {
+        const checkboxes = document.querySelectorAll('.entry-checkbox:checked');
+        const count = checkboxes.length;
+        const toolbar = document.getElementById('bulkToolbar');
+        const countSpan = document.getElementById('selectedCount');
+
+        countSpan.textContent = count;
+        if (count > 0) {
+            toolbar.classList.remove('d-none');
+        } else {
+            toolbar.classList.add('d-none');
+        }
+    }
+
+    document.getElementById('selectAll').addEventListener('change', function () {
+        const isChecked = this.checked;
+        document.querySelectorAll('.entry-checkbox').forEach(cb => {
+            cb.checked = isChecked;
+        });
+        updateToolbar();
+    });
+
+    function openDeclarationModal() {
+        // Collect IDs
+        const checkboxes = document.querySelectorAll('.entry-checkbox:checked');
+        const ids = Array.from(checkboxes).map(cb => cb.value);
+
+        const container = document.getElementById('selectedIdsInputContainer');
+        container.innerHTML = '';
+        ids.forEach(id => {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'entry_ids';
+            input.value = id;
+            container.appendChild(input);
+        });
+
+        new bootstrap.Modal(document.getElementById('declarationModal')).show();
+    }
+    // ----------------------------
+
     function toggleEditMarketValue() {
         const isChecked = document.getElementById('editIsPrivate').checked;
         const div = document.getElementById('editMarketValueDiv');
@@ -461,6 +537,29 @@
                     fileContainer.textContent = "No attachment.";
                 }
 
+                // --- Linked Declarations ---
+                // We need to pass this data via data attributes.
+                // Updating generation of data-declarations in the loop first
+                const declarations = JSON.parse(this.dataset.declarations || '[]');
+                if (declarations.length > 0) {
+                    let declHtml = '<h6 class="mt-3">Linked Declarations:</h6><ul class="list-group list-group-flush">';
+                    declarations.forEach(d => {
+                        const fileLink = d.file ? `/cardwatch/bookkeeping/files/${d.file}` : '#';
+                        const fileLabel = d.file ? '📎 View File' : 'No File';
+                        declHtml += `
+                            <li class="list-group-item d-flex justify-content-between align-items-center ps-0">
+                                <div>${d.desc} (${d.amount.toFixed(2)} ${d.currency})</div>
+                                ${d.file ? `<a href="${fileLink}" target="_blank" class="btn btn-sm btn-outline-secondary">${fileLabel}</a>` : ''}
+                            </li>
+                        `;
+                    });
+                    declHtml += '</ul>';
+                    fileContainer.insertAdjacentHTML('afterend', declHtml);
+                    // Note: This appends after file container. 
+                    // Ideally we should have a dedicated container in the HTML but this works for now.
+                }
+                // ---------------------------
+
                 // Items
                 const itemsData = JSON.parse(this.dataset.items || '[]');
                 const itemsSection = document.getElementById('itemsSection');
@@ -550,6 +649,88 @@
     </div>
 </div>
 
+<!-- Declaration Modal -->
+<div class="modal fade" id="declarationModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Link Import Declaration</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <ul class="nav nav-tabs mb-3" id="declTabs" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" id="new-tab" data-bs-toggle="tab" data-bs-target="#new-decl"
+                            type="button" role="tab">New Declaration</button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="existing-tab" data-bs-toggle="tab" data-bs-target="#existing-decl"
+                            type="button" role="tab">Link Existing</button>
+                    </li>
+                </ul>
+
+                <form id="declarationForm" action="{{ url_for('bookkeeping.add_declaration') }}" method="POST"
+                    enctype="multipart/form-data">
+                    <div id="selectedIdsInputContainer"></div>
+
+                    <div class="tab-content">
+                        <!-- New Declaration -->
+                        <div class="tab-pane fade show active" id="new-decl" role="tabpanel">
+                            <div class="mb-3">
+                                <label class="form-label">Date</label>
+                                <input type="date" name="date" class="form-control"
+                                    value="{{ '%04d-%02d-%02d' % (year, month, 1) }}">
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Description</label>
+                                <input type="text" name="description" class="form-control" value="Import Declaration">
+                            </div>
+                            <div class="row">
+                                <div class="col-6 mb-3">
+                                    <label class="form-label">Cost Amount</label>
+                                    <input type="number" step="0.01" name="amount" class="form-control">
+                                </div>
+                                <div class="col-6 mb-3">
+                                    <label class="form-label">Currency</label>
+                                    <select name="currency" class="form-select">
+                                        <option value="EUR">EUR</option>
+                                        <option value="CHF">CHF</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Proof / Tax Bill (PDF)</label>
+                                <input type="file" name="invoice" class="form-control">
+                            </div>
+                        </div>
+
+                        <!-- Existing -->
+                        <div class="tab-pane fade" id="existing-decl" role="tabpanel">
+                            <div class="mb-3">
+                                <label class="form-label">Select Existing Declaration Cost</label>
+                                <select name="existing_declaration_id" class="form-select">
+                                    <option value="">-- Select --</option>
+                                    {% for e in entries %}
+                                    {% if e.entry_type == 'cost' %}
+                                    <option value="{{ e.id }}">{{ e.date }} - {{ e.description|truncate(40) }} ({{
+                                        e.amount_eur }} EUR)</option>
+                                    {% endif %}
+                                    {% endfor %}
+                                </select>
+                                <div class="form-text">Shows costs from current month view only.</div>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="submit" form="declarationForm" class="btn btn-success">Link Declaration</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Confirm Invoice Modal -->
 <div class="modal fade" id="confirmInvoiceModal" tabindex="-1">
     <div class="modal-dialog modal-lg">
@@ -569,6 +750,76 @@
     </div>
 </div>
 
+<!-- Upload Rates Modal -->
+<div class="modal fade" id="uploadRatesModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Upload Exchange Rates PDF</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">Select PDF File</label>
+                    <input type="file" class="form-control" id="ratesFile" accept=".pdf">
+                    <div class="form-text">Upload the monthly EUR/CHF rates PDF.</div>
+                </div>
+                <div id="ratesUploadStatus" class="alert alert-info d-none"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" onclick="uploadRates()">Upload</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Link / Distribute Modal -->
+<div class="modal fade" id="linkEntriesModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Link / Distribute Entries</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">Link Type</label>
+                    <select id="linkType" class="form-select">
+                        <option value="shipping_distribution">Distribute Shipping Cost (Source -> Targets)</option>
+                        <option value="declaration_distribution">Distribute Declaration Cost (Source -> Targets)
+                        </option>
+                        <option value="acquisition_source">Set Acquisition Source (Sale -> Purchase)</option>
+                    </select>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Select Source Entry (The Cost/Origin)</label>
+                    <select id="linkSourceId" class="form-select" onchange="updateTargetPreview()">
+                        <!-- Populated by JS -->
+                    </select>
+                </div>
+
+                <div class="alert alert-secondary">
+                    <div class="d-flex justify-content-between">
+                        <strong>Target Allocations:</strong>
+                        <span id="distributeStatus">Source Total: <span id="sourceTotal">0.00</span> | Remaining: <span
+                                id="remainingTotal" class="text-success">0.00</span></span>
+                    </div>
+                </div>
+
+                <div id="targetListContainer" style="max-height: 200px; overflow-y: auto;">
+                    <!-- Populated by JS -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" onclick="submitLinkEntries()">Confirm Link</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
     let parsedData = null;
     let tempFilename = null;
@@ -581,7 +832,7 @@
         const formData = new FormData();
         formData.append('invoice_file', file);
 
-        fetch("{{ url_for('upload_invoice') }}", {
+        fetch("{{ url_for('bookkeeping.upload_invoice') }}", {
             method: 'POST',
             body: formData
         })
@@ -638,7 +889,7 @@
     function confirmInvoice() {
         if (!parsedData || !tempFilename) return;
 
-        fetch("{{ url_for('confirm_invoice') }}", {
+        fetch("{{ url_for('bookkeeping.confirm_invoice') }}", {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -652,6 +903,188 @@
                     location.reload();
                 } else {
                     alert("Error saving: " + res.error);
+                }
+            });
+    }
+
+    function uploadRates() {
+        const fileInput = document.getElementById('ratesFile');
+        const file = fileInput.files[0];
+        if (!file) return;
+
+        const statusDiv = document.getElementById('ratesUploadStatus');
+        statusDiv.textContent = "Uploading...";
+        statusDiv.classList.remove('d-none', 'alert-danger', 'alert-success');
+        statusDiv.classList.add('alert-info');
+        statusDiv.classList.remove('d-none');
+
+        const formData = new FormData();
+        formData.append('pdf_file', file);
+
+        fetch("{{ url_for('bookkeeping.upload_rates') }}", {
+            method: 'POST',
+            body: formData
+        })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    statusDiv.textContent = `Success! Updated/Added ${data.count} rates.`;
+                    statusDiv.classList.remove('alert-info');
+                    statusDiv.classList.add('alert-success');
+                    setTimeout(() => {
+                        bootstrap.Modal.getOrCreateInstance(document.getElementById('uploadRatesModal')).hide();
+                        location.reload();
+                    }, 1500);
+                } else {
+                    statusDiv.textContent = "Error: " + data.error;
+                    statusDiv.classList.remove('alert-info');
+                    statusDiv.classList.add('alert-danger');
+                }
+            })
+            .catch(err => {
+                statusDiv.textContent = "Error uploading file.";
+                statusDiv.classList.remove('alert-info');
+                statusDiv.classList.add('alert-danger');
+            });
+    }
+
+    // Linking Logic
+    function openLinkModal() {
+        const checked = document.querySelectorAll('.entry-checkbox:checked');
+        if (checked.length < 2) {
+            alert("Please select at least 2 entries (1 Source, 1+ Targets).");
+            return;
+        }
+
+        const sourceSelect = document.getElementById('linkSourceId');
+        sourceSelect.innerHTML = "";
+
+        const entries = [];
+        checked.forEach(cb => {
+            const row = cb.closest('tr');
+            entries.push({
+                id: cb.value,
+                date: row.dataset.date,
+                desc: row.dataset.desc,
+                amt: parseFloat(row.dataset.eur),
+                type: row.dataset.type
+            });
+        });
+
+        // Populate Source Select
+        entries.forEach(e => {
+            const opt = document.createElement('option');
+            opt.value = e.id;
+            opt.text = `${e.date} - ${e.desc} (${e.amt.toFixed(2)} EUR)`;
+            opt.dataset.amt = e.amt; // Store for calculation
+            sourceSelect.add(opt);
+        });
+
+        // Initial Target Preview
+        updateTargetPreview();
+        new bootstrap.Modal(document.getElementById('linkEntriesModal')).show();
+    }
+
+    function updateTargetPreview() {
+        const sourceSelect = document.getElementById('linkSourceId');
+        const selectedSourceId = sourceSelect.value;
+        const sourceAmt = parseFloat(sourceSelect.options[sourceSelect.selectedIndex].dataset.amt || 0);
+
+        document.getElementById('sourceTotal').textContent = sourceAmt.toFixed(2);
+
+        const container = document.getElementById('targetListContainer');
+        container.innerHTML = "";
+
+        const checked = document.querySelectorAll('.entry-checkbox:checked');
+        const targets = [];
+
+        checked.forEach(cb => {
+            if (cb.value !== selectedSourceId) {
+                const row = cb.closest('tr');
+                targets.push({
+                    id: cb.value,
+                    desc: row.dataset.desc,
+                    date: row.dataset.date
+                });
+            }
+        });
+
+        if (targets.length === 0) return;
+
+        // Default Even Split
+        const defaultShare = sourceAmt / targets.length;
+
+        targets.forEach(t => {
+            const div = document.createElement('div');
+            div.className = "input-group mb-2";
+            div.innerHTML = `
+                <span class="input-group-text small" style="width: 250px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis;" title="${t.desc}">${t.date} - ${t.desc}</span>
+                <input type="number" step="0.01" class="form-control target-allocation" 
+                    value="${defaultShare.toFixed(2)}" 
+                    data-id="${t.id}"
+                    oninput="recalcRemaining()">
+                <span class="input-group-text">EUR</span>
+            `;
+            container.appendChild(div);
+        });
+
+        recalcRemaining();
+    }
+
+    function recalcRemaining() {
+        const sourceSelect = document.getElementById('linkSourceId');
+        const sourceAmt = parseFloat(sourceSelect.options[sourceSelect.selectedIndex].dataset.amt || 0);
+
+        let allocated = 0;
+        document.querySelectorAll('.target-allocation').forEach(input => {
+            allocated += parseFloat(input.value || 0);
+        });
+
+        const remaining = sourceAmt - allocated;
+        const remSpan = document.getElementById('remainingTotal');
+        remSpan.textContent = remaining.toFixed(2);
+
+        if (Math.abs(remaining) > 0.01) {
+            remSpan.className = "text-danger fw-bold";
+        } else {
+            remSpan.className = "text-success";
+        }
+    }
+
+    function submitLinkEntries() {
+        const sourceId = document.getElementById('linkSourceId').value;
+        const linkType = document.getElementById('linkType').value;
+
+        const targetIds = [];
+        const allocations = {};
+
+        document.querySelectorAll('.target-allocation').forEach(input => {
+            const tid = input.dataset.id;
+            targetIds.push(tid);
+            allocations[tid] = parseFloat(input.value || 0);
+        });
+
+        if (targetIds.length === 0) {
+            alert("No targets selected.");
+            return;
+        }
+
+        fetch("{{ url_for('bookkeeping.link_entries') }}", {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                source_id: sourceId,
+                target_ids: targetIds,
+                link_type: linkType,
+                allocations: allocations
+            })
+        })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    location.reload();
+                } else {
+                    alert("Error: " + data.error);
                 }
             });
     }

@@ -200,6 +200,24 @@ class BookkeepingEntry(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     
     items = relationship("BookkeepingItem", backref="entry", cascade="all, delete-orphan")
+    
+    # Declarations made FOR this entry (Purchase -> Declaration)
+    # This entry is the SOURCE.
+    declarations = relationship(
+        "EntryLink",
+        foreign_keys="[EntryLink.source_id]",
+        back_populates="source",
+        cascade="all, delete-orphan"
+    )
+    
+    # Purchases associated WITH this entry (Declaration -> Purchases)
+    # This entry is the TARGET.
+    associated_purchases = relationship(
+        "EntryLink",
+        foreign_keys="[EntryLink.target_id]",
+        back_populates="target",
+        cascade="all, delete-orphan"
+    )
 
 
 class BookkeepingItem(Base):
@@ -217,6 +235,27 @@ class BookkeepingItem(Base):
     
     bookkeeping_id = Column(Integer, ForeignKey("bookkeeping_entries.id"), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+class EntryLink(Base):
+    """
+    Many-to-Many link between Bookkeeping Entries.
+    Usage: Linking Purchase Entry (Source) -> Declaration Cost Entry (Target).
+    """
+    __tablename__ = "entry_links"
+    
+    id = Column(Integer, primary_key=True)
+    source_id = Column(Integer, ForeignKey("bookkeeping_entries.id"), nullable=False, index=True)
+    target_id = Column(Integer, ForeignKey("bookkeeping_entries.id"), nullable=False, index=True)
+    link_type = Column(String, default="declaration") # 'declaration', 'refund', etc.
+    amount = Column(Float, nullable=True, default=0.0) # Distributed amount if applicable
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    source = relationship("BookkeepingEntry", foreign_keys=[source_id], back_populates="declarations")
+    target = relationship("BookkeepingEntry", foreign_keys=[target_id], back_populates="associated_purchases")
+
+# Add relationships to BookkeepingEntry (Monkey-patching not ideal, better to edit class above)
+# But since we are replacing content, let's edit the class above.
 
 
 
@@ -281,3 +320,9 @@ def upsert_single_daily(session, card_id: int):
         else:
             session.add(SingleCardDaily(card_id=card_id, day=today, low=low, avg=avg))
         session.commit()
+
+class ExchangeRate(Base):
+    __tablename__ = "exchange_rates"
+    date = Column(Date, primary_key=True)
+    currency = Column(String, default="EUR")
+    rate = Column(Float, nullable=False) # CHF per 1 Unit
