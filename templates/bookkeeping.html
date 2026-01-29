@@ -64,10 +64,11 @@
             </tr>
         </thead>
         <tbody>
-            {% for entry in entries %}
+            {% macro render_row(entry, level=0) %}
             <tr class="cursor-pointer {% if entry.is_private_collection %}table-secondary{% elif entry.entry_type == 'cost' %}table-danger{% else %}table-success{% endif %} entry-row"
-                data-id="{{ entry.id }}" data-date="{{ entry.date }}" data-type="{{ entry.entry_type }}"
-                data-desc="{{ entry.description }}" data-eur="{{ entry.amount_eur }}" data-chf="{{ entry.amount_chf }}"
+                style="{% if level > 0 %}border-left: 5px solid #6c757d;{% endif %}" data-id="{{ entry.id }}"
+                data-date="{{ entry.date }}" data-type="{{ entry.entry_type }}" data-desc="{{ entry.description }}"
+                data-eur="{{ entry.amount_eur }}" data-chf="{{ entry.amount_chf }}"
                 data-rate="{{ entry.exchange_rate }}" data-file="{{ entry.file_path or '' }}"
                 data-private="{{ entry.is_private_collection }}" data-market="{{ entry.market_value or '' }}"
                 data-needs_decl="{{ entry.needs_import_declaration }}"
@@ -82,7 +83,8 @@
                         {% if not loop.last %},{% endif %}
                     {% endfor %}
                 ]'>
-                <td>
+                <td style="padding-left: {{ 10 + (level * 30) }}px;">
+                    {% if level > 0 %}↳ {% endif %}
                     <input type="checkbox" class="form-check-input entry-checkbox" value="{{ entry.id }}"
                         onclick="event.stopPropagation(); updateToolbar();">
                 </td>
@@ -123,11 +125,7 @@
                     {% endif %}
                 </td>
                 <td>
-                <td>
                     <div class="d-flex gap-2">
-                        {% if entry.file_path %}
-                        <!-- File link moved to description column -->
-                        {% endif %}
                         <button type="button" class="btn btn-link p-0 text-primary edit-btn"
                             onclick="event.stopPropagation(); openEditModal(this.closest('tr'))">
                             ✏️
@@ -140,6 +138,16 @@
                     </div>
                 </td>
             </tr>
+
+            {% if entry.children %}
+            {% for child in entry.children %}
+            {{ render_row(child, level + 1) }}
+            {% endfor %}
+            {% endif %}
+            {% endmacro %}
+
+            {% for entry in entries %}
+            {{ render_row(entry) }}
             {% else %}
             <tr>
                 <td colspan="7" class="text-center text-muted">No entries for this month.</td>
@@ -147,6 +155,54 @@
             {% endfor %}
         </tbody>
     </table>
+</div>
+
+<!-- Stock Inventory Section -->
+<div class="card mt-4 mb-4">
+    <div class="card-header bg-light cursor-pointer d-flex justify-content-between align-items-center"
+        data-bs-toggle="collapse" data-bs-target="#stockTableParams">
+        <h5 class="mb-0">📦 Stock Inventory (Available)</h5>
+        <div>
+            <span class="badge bg-success fs-6">Total Value: {{ "%.2f"|format(total_stock_value_chf) }} CHF</span>
+        </div>
+    </div>
+    <div id="stockTableParams" class="collapse show">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover table-striped mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Date Acq.</th>
+                            <th>Item Name</th>
+                            <th class="text-end">Base Price (CHF)</th>
+                            <th class="text-end">Extra Costs (CHF)</th>
+                            <th class="text-end">Total Basis (CHF)</th>
+                            <th>Entry Source</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in stock_inventory %}
+                        <tr>
+                            <td>{{ item.date }}</td>
+                            <td>{{ item.name }}</td>
+                            <td class="text-end">{{ "%.2f"|format(item.price_chf) }}</td>
+                            <td class="text-end text-muted">+{{ "%.2f"|format(item.extra_chf) }}</td>
+                            <td class="text-end fw-bold">{{ "%.2f"|format(item.total_chf) }}</td>
+                            <td>
+                                <span class="badge bg-secondary cursor-pointer" title="{{ item.entry_desc }}">{{
+                                    item.entry_desc|truncate(30) }}</span>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="6" class="text-center text-muted">No available stock items found.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
 </div>
 
 <!-- Add Entry Modal -->
@@ -795,9 +851,18 @@
 
                 <div class="mb-3">
                     <label class="form-label">Select Source Entry (The Cost/Origin)</label>
-                    <select id="linkSourceId" class="form-select" onchange="updateTargetPreview()">
+                    <select id="linkSourceId" class="form-select" onchange="onSourceChanged()">
                         <!-- Populated by JS -->
                     </select>
+                </div>
+
+                <!-- Existing Links Section -->
+                <div id="existingLinksSection" class="d-none mb-3">
+                    <label class="form-label text-muted small">Already Linked:</label>
+                    <div id="existingLinksList" class="list-group list-group-flush border rounded"
+                        style="max-height: 150px; overflow-y: auto;">
+                        <!-- Populated via AJAX -->
+                    </div>
                 </div>
 
                 <div class="alert alert-secondary">
@@ -981,8 +1046,69 @@
         });
 
         // Initial Target Preview
-        updateTargetPreview();
+        onSourceChanged();
         new bootstrap.Modal(document.getElementById('linkEntriesModal')).show();
+    }
+
+    function onSourceChanged() {
+        fetchExistingLinks();
+        updateTargetPreview();
+    }
+
+    function fetchExistingLinks() {
+        const sourceSelect = document.getElementById('linkSourceId');
+        if (!sourceSelect.value) return;
+
+        const listDiv = document.getElementById('existingLinksList');
+        const container = document.getElementById('existingLinksSection');
+
+        fetch(`{{ url_for('bookkeeping.get_entry_links') }}?source_id=${sourceSelect.value}`)
+            .then(res => res.json())
+            .then(data => {
+                if (data.success && data.links.length > 0) {
+                    container.classList.remove('d-none');
+                    listDiv.innerHTML = "";
+                    data.links.forEach(l => {
+                        const item = document.createElement('div');
+                        item.className = "list-group-item d-flex justify-content-between align-items-center";
+                        item.innerHTML = `
+                        <div>
+                            <span class="fw-bold">${l.amount.toFixed(2)} EUR</span> to 
+                            <span class="text-muted small">${l.target_date}</span> ${l.target_desc.substring(0, 30)}...
+                        </div>
+                        <button class="btn btn-sm btn-outline-danger" onclick="removeLink(${l.id})">Unlink</button>
+                    `;
+                        listDiv.appendChild(item);
+                    });
+                } else {
+                    container.classList.add('d-none');
+                }
+            });
+    }
+
+    function removeLink(linkId) {
+        if (!confirm("Are you sure you want to unlink and revert the cost distribution?")) return;
+
+        fetch("{{ url_for('bookkeeping.unlink_entries') }}", {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ link_ids: [linkId] })
+        })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    // Refresh links list
+                    fetchExistingLinks();
+                    // We should also reload page if successful to reflect cost changes in table?
+                    // Or just keep modal open.
+                    // Reload on modal close? 
+                    // Let's reload page for simplicity to show updated costs in table immediately or warn user?
+                    // Ideally update UI... but reloading is safest.
+                    location.reload();
+                } else {
+                    alert("Error: " + data.error);
+                }
+            });
     }
 
     function updateTargetPreview() {
