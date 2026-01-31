@@ -815,8 +815,8 @@ def run_and_reschedule(scheduler):
     except Exception as e:
         logger.error(f"Scrape job failed: {e}")
     finally:
-        # Schedule next run 4 hours from NOW (completion time)
-        next_run = datetime.utcnow() + timedelta(hours=4)
+        # Schedule next run 12 hours from NOW (completion time)
+        next_run = datetime.utcnow() + timedelta(hours=12)
         logger.info(f"Scrape finished. Next run scheduled for {next_run} UTC")
         scheduler.add_job(
             lambda: run_and_reschedule(scheduler),
@@ -824,9 +824,9 @@ def run_and_reschedule(scheduler):
             run_date=next_run
         )
 
-# Fixed delay schedule (Wait 4h AFTER finish)
+# Fixed delay schedule (Wait 12h AFTER finish)
 def schedule_hourly():
-    logger.info("Starting scheduler (dynamic 4h delay after finish)")
+    logger.info("Starting scheduler (dynamic 12h delay after finish)")
     sched = BackgroundScheduler(timezone="UTC")
     
     # Start the first job immediately

@@ -197,6 +197,10 @@ class BookkeepingEntry(Base):
     needs_import_declaration = Column(Integer, default=0) # 0 or 1
     import_declaration_filed = Column(Integer, default=0) # 0 or 1
     
+    cost_type = Column(String, nullable=True) # 'shipping', 'misc', 'purchase', 'import', 'private_collection', 'sale'
+    has_vat = Column(Integer, default=1) # 1=Yes, 0=No (Warning if Purchase and 0)
+    vat_rate = Column(Float, default=0.0) 
+    
     created_at = Column(DateTime, default=datetime.utcnow)
     
     items = relationship("BookkeepingItem", backref="entry", cascade="all, delete-orphan")
@@ -219,6 +223,12 @@ class BookkeepingEntry(Base):
         cascade="all, delete-orphan"
     )
 
+    attachments = relationship(
+        "BookkeepingAttachment",
+        back_populates="entry",
+        cascade="all, delete-orphan"
+    )
+
 
 class BookkeepingItem(Base):
     """Inventory items specifically for Bookkeeping (financial stock)."""
@@ -235,6 +245,19 @@ class BookkeepingItem(Base):
     
     bookkeeping_id = Column(Integer, ForeignKey("bookkeeping_entries.id"), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+    @property
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "name": self.name,
+            "price": self.price,
+            "extra": self.extra_costs, # 'extra' per JS expectations? In JS I saw 'extra' and 'price'.
+            # Let's check JS. JS uses 'item.extra' and 'item.price'.
+            "extra_costs": self.extra_costs, # sending both just in case
+            "currency": self.currency,
+            "external_id": self.external_id
+        }
 
 class EntryLink(Base):
     """
@@ -261,6 +284,7 @@ class EntryLink(Base):
 
 def init_db():
     Base.metadata.create_all(ENGINE)
+
 
 from contextlib import contextmanager
 from typing import Generator, Optional
@@ -321,8 +345,20 @@ def upsert_single_daily(session, card_id: int):
             session.add(SingleCardDaily(card_id=card_id, day=today, low=low, avg=avg))
         session.commit()
 
+
+class BookkeepingAttachment(Base):
+    __tablename__ = "bookkeeping_attachments"
+    
+    id = Column(Integer, primary_key=True)
+    entry_id = Column(Integer, ForeignKey("bookkeeping_entries.id"), nullable=False, index=True)
+    file_path = Column(String, nullable=False)
+    uploaded_at = Column(DateTime, default=datetime.utcnow)
+    
+    entry = relationship("BookkeepingEntry", back_populates="attachments")
+
 class ExchangeRate(Base):
     __tablename__ = "exchange_rates"
     date = Column(Date, primary_key=True)
     currency = Column(String, default="EUR")
     rate = Column(Float, nullable=False) # CHF per 1 Unit
+

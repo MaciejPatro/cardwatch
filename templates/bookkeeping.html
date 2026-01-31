@@ -35,6 +35,9 @@
         <button class="btn btn-dark ms-2" onclick="document.getElementById('receiptInput').click()">
             🧾 Scan Receipt
         </button>
+        <button class="btn btn-secondary ms-2" data-bs-toggle="modal" data-bs-target="#uploadShippingModal">
+            📦 Upload Shipping
+        </button>
         <input type="file" id="receiptInput" class="d-none" accept="image/*" onchange="uploadReceipt(this)">
     </div>
 </div>
@@ -53,6 +56,43 @@
     </div>
 </div>
 
+<style>
+    .child-row {
+        background-color: rgba(0, 0, 0, 0.03) !important;
+        font-size: 0.95em;
+    }
+
+    .child-row td {
+        padding-top: 5px !important;
+        padding-bottom: 5px !important;
+        border-top: 1px solid rgba(0, 0, 0, 0.05);
+    }
+
+    .tree-line {
+        display: inline-block;
+        width: 15px;
+        height: 12px;
+        border-left: 2px solid #aaa;
+        border-bottom: 2px solid #aaa;
+        margin-right: 5px;
+        border-bottom-left-radius: 5px;
+        transform: translateY(-2px);
+    }
+
+    /* Indentation spacers */
+    .tree-spacer {
+        display: inline-block;
+        width: 20px;
+    }
+</style>
+
+<div class="d-flex justify-content-end mb-2">
+    <div class="btn-group btn-group-sm">
+        <button class="btn btn-outline-secondary" onclick="expandAll()">Expand All</button>
+        <button class="btn btn-outline-secondary" onclick="collapseAll()">Collapse All</button>
+    </div>
+</div>
+
 <div class="table-responsive">
     <table class="table table-hover">
         <thead>
@@ -64,39 +104,73 @@
                 <th class="text-end">Amount (CHF)</th>
                 <th class="text-end">Income</th>
                 <th class="text-center">Type</th>
+                <th class="text-center">Sub-Type</th>
                 <th class="text-center">Pvt. Col.</th>
                 <th>Actions</th>
             </tr>
         </thead>
         <tbody>
-            {% macro render_row(entry, level=0) %}
-            <tr class="cursor-pointer {% if entry.is_private_collection %}table-secondary{% elif entry.entry_type == 'cost' %}table-danger{% else %}table-success{% endif %} entry-row"
-                style="{% if level > 0 %}border-left: 5px solid #6c757d;{% endif %}" data-id="{{ entry.id }}"
+            {% macro render_row(entry, level=0, parent_id=None) %}
+            <tr class="cursor-pointer {% if entry.is_private_collection %}table-secondary{% elif entry.entry_type == 'cost' and level == 0 %}{% if entry.cost_type == 'purchase' %}table-primary{% else %}table-danger{% endif %}{% elif level == 0 %}table-success{% endif %} entry-row {% if level > 0 %}child-row d-none{% endif %}"
+                data-id="{{ entry.id }}" data-parent-id="{{ parent_id if parent_id else '' }}" data-level="{{ level }}"
                 data-date="{{ entry.date }}" data-type="{{ entry.entry_type }}" data-desc="{{ entry.description }}"
-                data-eur="{{ entry.amount_eur }}" data-chf="{{ entry.amount_chf }}"
-                data-rate="{{ entry.exchange_rate }}" data-file="{{ entry.file_path or '' }}"
+                data-eur="{{ entry.display_eur|default(entry.amount_eur) }}"
+                data-chf="{{ entry.display_chf|default(entry.amount_chf) }}" data-rate="{{ entry.exchange_rate }}"
+                data-currency="{{ entry.original_currency }}" data-file="{{ entry.file_path or '' }}"
                 data-private="{{ entry.is_private_collection }}" data-market="{{ entry.market_value or '' }}"
-                data-needs_decl="{{ entry.needs_import_declaration }}"
+                data-cost_type="{{ entry.cost_type or '' }}" data-needs_decl="{{ entry.needs_import_declaration }}"
                 data-decl_filed="{{ entry.import_declaration_filed }}" data-declarations='[
                     {% for link in entry.declarations %}
                         {"desc": "{{ link.target.description }}", "amount": {{ link.target.amount_eur if link.target.original_currency == "EUR" else link.target.amount_chf }}, "currency": "{{ link.target.original_currency }}", "file": "{{ link.target.file_path or "" }}"}
                         {% if not loop.last %},{% endif %}
                     {% endfor %}
                 ]' data-items='[
-                    {% for item in entry.items %}
+                    {% for item in entry.entry_items|default(entry.items) %}
                         {"name": "{{ item.name }}", "price": {{ item.price }}, "extra": {{ item.extra_costs }}}
                         {% if not loop.last %},{% endif %}
                     {% endfor %}
                 ]'>
-                <td style="padding-left: {{ 10 + (level * 30) }}px;">
-                    {% if level > 0 %}↳ {% endif %}
-                    <input type="checkbox" class="form-check-input entry-checkbox" value="{{ entry.id }}"
-                        onclick="event.stopPropagation(); updateToolbar();">
+                <td>
+                    <div class="d-flex align-items-center" style="padding-left: 5px;">
+                        {# Tree Logic #}
+                        {% if level > 0 %}
+                        {# Spacers for deeper nesting #}
+                        {% for i in range(level - 1) %}
+                        <span class="tree-spacer"></span>
+                        {% endfor %}
+                        <span class="tree-line"></span>
+                        {% endif %}
+
+                        {% if entry.children %}
+                        <span class="cursor-pointer me-1 toggle-icon"
+                            onclick="event.stopPropagation(); toggleChildren(this, '{{ entry.id }}')"
+                            style="width: 20px; display: inline-block; text-align: center;">▶</span>
+                        {% else %}
+                        <span style="width: 20px; display: inline-block;"></span>
+                        {% endif %}
+
+                        {% set current_items = entry.entry_items if entry.entry_items is defined else entry.items %}
+                        <input type="checkbox" class="form-check-input entry-checkbox" value="{{ entry.id }}"
+                            data-items='{{ current_items|map(attribute="to_dict")|list|tojson(indent=None) }}'
+                            data-attachments='{{ entry.attachments|map(attribute="file_path")|list|tojson }}'
+                            data-dist="{{ '%.2f'|format(entry.dist_amount|default(0)) }}"
+                            data-undist="{{ '%.2f'|format(entry.undist_amount|default(0)) }}"
+                            onclick="event.stopPropagation(); updateToolbar();">
+                    </div>
                 </td>
                 <td>{{ entry.date }}</td>
                 <td>
                     {{ entry.description|truncate(50) }}
-                    {% if entry.file_path %}
+                    {% if entry.attachments %}
+                    <div class="small">
+                        {% for att in entry.attachments %}
+                        <a href="{{ url_for('bookkeeping.bookkeeping_file', filename=att.file_path) }}" target="_blank"
+                            onclick="event.stopPropagation()">
+                            📎 {{ att.file_path.split('/')[-1] }}
+                        </a><br>
+                        {% endfor %}
+                    </div>
+                    {% elif entry.file_path %}
                     <div class="small">
                         <a href="{{ url_for('bookkeeping.bookkeeping_file', filename=entry.file_path) }}"
                             target="_blank" onclick="event.stopPropagation()">
@@ -105,8 +179,8 @@
                     </div>
                     {% endif %}
                 </td>
-                <td class="text-end">{{ "%.2f"|format(entry.amount_eur) }}</td>
-                <td class="text-end">{{ "%.2f"|format(entry.amount_chf) }}</td>
+                <td class="text-end">{{ "%.2f"|format(entry.display_eur|default(entry.amount_eur)) }}</td>
+                <td class="text-end">{{ "%.2f"|format(entry.display_chf|default(entry.amount_chf)) }}</td>
                 <td class="text-end fw-bold">
                     {% if entry.profit_display %}
                     {% if entry.profit_chf >= 0 %}
@@ -117,20 +191,20 @@
                     {% endif %}
                 </td>
                 <td class="text-center">
-                    {% if entry.is_private_collection %}
-                    <span class="badge bg-secondary">Private</span>
-                    {% elif entry.entry_type == 'cost' %}
+                    {% if entry.entry_type == 'cost' %}
                     <span class="badge bg-danger">Cost</span>
-                    {% if entry.needs_import_declaration %}
-                    {% if entry.import_declaration_filed %}
-                    <br><span class="badge bg-success" title="Declaration Filed">✅ Declared</span>
-                    {% else %}
-                    <br><span class="badge bg-warning text-dark" title="Import Declaration Missing">⚠️
-                        Declaration</span>
-                    {% endif %}
+                    {% if entry.warnings %}
+                    {% for w in entry.warnings %}
+                    <br><span class="badge bg-warning text-dark" title="{{ w }}">⚠️ {{ w }}</span>
+                    {% endfor %}
                     {% endif %}
                     {% else %}
                     <span class="badge bg-success">Gain</span>
+                    {% endif %}
+                </td>
+                <td class="text-center">
+                    {% if entry.cost_type %}
+                    <span class="badge bg-secondary">{{ entry.cost_type|capitalize }}</span>
                     {% endif %}
                 </td>
                 <td class="text-center">
@@ -155,7 +229,7 @@
 
             {% if entry.children %}
             {% for child in entry.children %}
-            {{ render_row(child, level + 1) }}
+            {{ render_row(child, level + 1, entry.id) }}
             {% endfor %}
             {% endif %}
             {% endmacro %}
@@ -170,6 +244,64 @@
         </tbody>
     </table>
 </div>
+
+<script>
+    function toggleChildren(icon, entryId) {
+        // Find all immediate children rows
+        // We use data-parent-id.
+        // If we want recursive opening, we might need more logic.
+        // For distinct levels, basic toggle works.
+        const children = document.querySelectorAll(`tr[data-parent-id='${entryId}']`);
+        let expanding = false;
+
+        children.forEach(child => {
+            if (child.classList.contains('d-none')) {
+                child.classList.remove('d-none');
+                expanding = true;
+            } else {
+                child.classList.add('d-none');
+                // Also recursively collapse grandchildren if collapsing parent
+                const childId = child.dataset.id;
+                const grandChildrenToggle = child.querySelector('.toggle-icon');
+                if (grandChildrenToggle) {
+                    // Reset grandchild icon
+                    grandChildrenToggle.textContent = '▶';
+                    // Hide grandchildren
+                    document.querySelectorAll(`tr[data-parent-id='${childId}']`).forEach(gc => {
+                        gc.classList.add('d-none');
+                        // And deeper... simpler to just hide everything under that tree?
+                        // For now, simple 1-level toggles are predictable.
+                        // But for completeness, let's keep it simple: Collapse Parent -> Hide Child.
+                        // Child state is preserved? No, better reset to closed.
+                        recursiveCollapse(childId);
+                    });
+                }
+            }
+        });
+
+        icon.textContent = expanding ? '▼' : '▶';
+    }
+
+    function recursiveCollapse(parentId) {
+        const children = document.querySelectorAll(`tr[data-parent-id='${parentId}']`);
+        children.forEach(child => {
+            child.classList.add('d-none');
+            const icon = child.querySelector('.toggle-icon');
+            if (icon) icon.textContent = '▶';
+            recursiveCollapse(child.dataset.id);
+        });
+    }
+
+    function expandAll() {
+        document.querySelectorAll('.child-row').forEach(row => row.classList.remove('d-none'));
+        document.querySelectorAll('.toggle-icon').forEach(icon => icon.textContent = '▼');
+    }
+
+    function collapseAll() {
+        document.querySelectorAll('.child-row').forEach(row => row.classList.add('d-none'));
+        document.querySelectorAll('.toggle-icon').forEach(icon => icon.textContent = '▶');
+    }
+</script>
 
 <!-- Monthly Totals Footer -->
 <div class="fixed-bottom bg-white border-top shadow-lg p-3">
@@ -260,15 +392,32 @@
                     <div id="scanMsg" class="alert alert-success d-none mb-3"></div>
                     <div class="mb-3">
                         <label class="form-label">Date</label>
-                        <input type="date" name="date" class="form-control" required
-                            value="{{ '%04d-%02d-%02d' % (year, month, 1) }}">
+                        <input type="date" name="date" id="addDate" class="form-control" required
+                            value="{{ '%04d-%02d-%02d' % (year, month, 1) }}" onchange="fetchRate('add')">
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Type</label>
-                        <select name="entry_type" class="form-select" required>
+                        <select name="entry_type" class="form-select" required onchange="toggleCostType(this.value)">
                             <option value="cost">Cost</option>
                             <option value="gain">Gain</option>
                         </select>
+                    </div>
+                    <div class="mb-3" id="costTypeDiv">
+                        <label class="form-label">Cost Sub-Type</label>
+                        <select name="cost_type" class="form-select" onchange="toggleVat(this.value)">
+                            <option value="misc">Misc</option>
+                            <option value="shipping">Shipping</option>
+                            <option value="processing">Processing Cost</option>
+                            <option value="purchase">Purchase (Inventory)</option>
+                            <option value="import">Import Tax</option>
+                            <option value="private_collection">Private Collection</option>
+                        </select>
+                    </div>
+                    <div class="form-check mb-3 d-none" id="vatDiv">
+                        <input class="form-check-input" type="checkbox" name="has_vat" id="hasVat" checked>
+                        <label class="form-check-label" for="hasVat">
+                            Invoice includes VAT? (Uncheck to warn)
+                        </label>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Description</label>
@@ -281,7 +430,8 @@
                         </div>
                         <div class="col-6 mb-3">
                             <label class="form-label">Currency</label>
-                            <select name="currency" class="form-select" required>
+                            <select name="currency" id="addCurrency" class="form-select" required
+                                onchange="fetchRate('add')">
                                 <option value="EUR">EUR</option>
                                 <option value="CHF">CHF</option>
                             </select>
@@ -289,15 +439,22 @@
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Exchange Rate (CHF/EUR)</label>
-                        <input type="number" step="0.0001" name="exchange_rate" class="form-control" value="0.95"
-                            required>
-                        <div class="form-text">Example: 1 EUR = X CHF</div>
+                        <div class="input-group">
+                            <div class="input-group-text">
+                                <input class="form-check-input mt-0" type="checkbox" name="auto_rate" id="addAutoRate"
+                                    checked onclick="toggleAutoRate('add')">
+                                <label class="ms-2 mb-0 small" for="addAutoRate">Auto</label>
+                            </div>
+                            <input type="number" step="0.0001" name="exchange_rate" id="addRate" class="form-control"
+                                value="0.95" disabled required>
+                        </div>
+                        <div class="form-text">Checked = fetch rate for date. Uncheck to enter manually.</div>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">Invoice / Receipt</label>
-                        <input type="file" name="invoice" class="form-control">
+                        <label class="form-label">Invoice / Receipt (Select Multiple)</label>
+                        <input type="file" name="invoice" class="form-control" multiple>
                     </div>
-                    <div class="form-check mb-3">
+                    <div class="form-check mb-3" id="privateColDiv" style="display:none;">
                         <input class="form-check-input" type="checkbox" name="is_private_collection" id="isPrivate"
                             onchange="toggleMarketValue()">
                         <label class="form-check-label" for="isPrivate">
@@ -341,6 +498,13 @@
                         <p><strong>Private Collection:</strong> <span id="detailPrivate"></span></p>
                         <p id="detailMarketValP" class="d-none"><strong>Market Value:</strong> <span
                                 id="detailMarketVal"></span></p>
+
+                        <!-- Distribution Info -->
+                        <div id="detailDistribution" class="mb-3 d-none">
+                            <strong>Distribution Status:</strong><br>
+                            <span class="ms-2">Distributed: <span id="detailDistTotal"></span></span><br>
+                            <span class="ms-2">Remaining: <span id="detailUndistTotal"></span></span>
+                        </div>
 
                         <!-- Declaration Status -->
                         <div id="declarationSection" class="mb-3 d-none">
@@ -389,11 +553,13 @@
                 <div class="modal-body">
                     <div class="mb-3">
                         <label class="form-label">Date</label>
-                        <input type="date" name="date" id="editDate" class="form-control" required>
+                        <input type="date" name="date" id="editDate" class="form-control" required
+                            onchange="fetchRate('edit')">
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Type</label>
-                        <select name="entry_type" id="editType" class="form-select" required>
+                        <select name="entry_type" id="editType" class="form-select" required
+                            onchange="toggleEditCostType()">
                             <option value="cost">Cost</option>
                             <option value="gain">Gain</option>
                         </select>
@@ -401,6 +567,19 @@
                     <div class="mb-3">
                         <label class="form-label">Description</label>
                         <textarea name="description" id="editDesc" class="form-control" rows="2"></textarea>
+                    </div>
+
+                    <!-- Cost Sub-Type -->
+                    <div class="mb-3 d-none" id="editCostTypeDiv">
+                        <label class="form-label">Sub-Type</label>
+                        <select name="cost_type" id="editCostType" class="form-select">
+                            <option value="misc">Misc</option>
+                            <option value="shipping">Shipping</option>
+                            <option value="processing">Processing Cost</option>
+                            <option value="purchase">Purchase (Inventory)</option>
+                            <option value="import">Import Tax/Duty</option>
+                            <option value="private_collection">Private Collection</option>
+                        </select>
                     </div>
                     <div class="row">
                         <div class="col-6 mb-3">
@@ -410,7 +589,8 @@
                         </div>
                         <div class="col-6 mb-3">
                             <label class="form-label">Currency</label>
-                            <select name="currency" id="editCurrency" class="form-select" required>
+                            <select name="currency" id="editCurrency" class="form-select" required
+                                onchange="fetchRate('edit')">
                                 <option value="EUR">EUR</option>
                                 <option value="CHF">CHF</option>
                             </select>
@@ -418,13 +598,21 @@
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Exchange Rate (CHF/EUR)</label>
-                        <input type="number" step="0.0001" name="exchange_rate" id="editRate" class="form-control"
-                            required>
+                        <div class="input-group">
+                            <div class="input-group-text">
+                                <input class="form-check-input mt-0" type="checkbox" name="auto_rate" id="editAutoRate"
+                                    onclick="toggleAutoRate('edit')">
+                                <label class="ms-2 mb-0 small" for="editAutoRate">Auto</label>
+                            </div>
+                            <input type="number" step="0.0001" name="exchange_rate" id="editRate" class="form-control"
+                                required>
+                        </div>
+                        <div class="form-text">Checked = fetch rate for date. Uncheck to enter manually.</div>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">Invoice / Receipt</label>
-                        <input type="file" name="invoice" class="form-control">
-                        <div class="form-text" id="editCurrentFile"></div>
+                        <label class="form-label">Add Attachment(s)</label>
+                        <input type="file" name="invoice" class="form-control" multiple>
+                        <div class="mt-2" id="editCurrentFiles"></div>
                     </div>
                     <div class="form-check mb-3">
                         <input class="form-check-input" type="checkbox" name="is_private_collection" id="editIsPrivate"
@@ -437,6 +625,15 @@
                         <label class="form-label">Market Value (EUR)</label>
                         <input type="number" step="0.01" name="market_value" id="editMarketValue" class="form-control">
                     </div>
+
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" name="import_declaration_filed"
+                            id="editDeclFiled">
+                        <label class="form-check-label" for="editDeclFiled">
+                            Import Tax Paid / Declared (Exempt)
+                        </label>
+                        <div class="form-text">Check this if tax is included or not required to suppress warnings.</div>
+                    </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
@@ -448,7 +645,46 @@
 </div>
 
 <script>
+    function toggleCostType(val) {
+        const costTypeDiv = document.getElementById('costTypeDiv');
+        const vatDiv = document.getElementById('vatDiv');
+        const privateColDiv = document.getElementById('privateColDiv'); // Legacy checkbox container if needed
+        const isPrivate = document.getElementById('isPrivate');
+
+        if (val === 'cost') {
+            costTypeDiv.classList.remove('d-none');
+            // Trigger sub-type change to set VAT visibility
+            const subType = document.querySelector('select[name="cost_type"]').value;
+            toggleVat(subType);
+        } else {
+            costTypeDiv.classList.add('d-none');
+            vatDiv.classList.add('d-none');
+        }
+    }
+
+    function toggleVat(subType) {
+        const vatDiv = document.getElementById('vatDiv');
+        const isPrivate = document.getElementById('isPrivate');
+
+        // Handle VAT visibility
+        if (subType === 'purchase') {
+            vatDiv.classList.remove('d-none');
+        } else {
+            vatDiv.classList.add('d-none');
+        }
+
+        // Handle Private Collection sync
+        if (subType === 'private_collection') {
+            isPrivate.checked = true;
+            toggleMarketValue(); // Show market value input
+        } else {
+            isPrivate.checked = false;
+            toggleMarketValue();
+        }
+    }
+
     function toggleMarketValue() {
+        // Logic might need adjustment if using sub-type select
         const isChecked = document.getElementById('isPrivate').checked;
         const div = document.getElementById('marketValueDiv');
         if (isChecked) {
@@ -500,6 +736,16 @@
     }
     // ----------------------------
 
+    function toggleEditCostType() {
+        const type = document.getElementById('editType').value;
+        const div = document.getElementById('editCostTypeDiv');
+        if (type === 'cost') {
+            div.classList.remove('d-none');
+        } else {
+            div.classList.add('d-none');
+        }
+    }
+
     function toggleEditMarketValue() {
         const isChecked = document.getElementById('editIsPrivate').checked;
         const div = document.getElementById('editMarketValueDiv');
@@ -521,12 +767,25 @@
         const file = row.dataset.file;
         const isPrivate = (row.dataset.private === '1' || row.dataset.private === 'True');
         const marketVal = row.dataset.market;
+        const declFiled = (row.dataset.decl_filed === '1' || row.dataset.decl_filed === 'True');
+
+        // Attachments
+        const attachments = JSON.parse(row.dataset.attachments || '[]');
 
         document.getElementById('editDate').value = date;
         document.getElementById('editType').value = type;
+
+        // Cost Type
+        document.getElementById('editCostType').value = row.dataset.cost_type || 'misc';
+        toggleEditCostType();
+
         document.getElementById('editDesc').value = desc;
         document.getElementById('editCurrency').value = currency;
         document.getElementById('editRate').value = rate;
+
+        // Default to Manual for Edit
+        document.getElementById('editAutoRate').checked = false;
+        document.getElementById('editRate').disabled = false;
 
         // Amount depends on currency
         const eur = parseFloat(row.dataset.eur);
@@ -534,20 +793,30 @@
         document.getElementById('editAmount').value = (currency === 'EUR' ? eur : chf).toFixed(2);
 
         document.getElementById('editIsPrivate').checked = isPrivate;
-        if (isPrivate) {
-            document.getElementById('editMarketValueDiv').classList.remove('d-none');
-            document.getElementById('editMarketValue').value = marketVal;
-        } else {
-            document.getElementById('editMarketValueDiv').classList.add('d-none');
-            document.getElementById('editMarketValue').value = '';
-        }
+        toggleEditMarketValue();
+        document.getElementById('editMarketValue').value = marketVal || '';
 
-        // File Label
-        const fileDiv = document.getElementById('editCurrentFile');
-        if (file && file !== 'None') {
-            fileDiv.textContent = `Current: ${file}`;
+        document.getElementById('editDeclFiled').checked = declFiled;
+
+        // File List Logic in Edit
+        const filesDiv = document.getElementById('editCurrentFiles');
+        filesDiv.innerHTML = '<h6>Current Attachments:</h6>';
+
+        if (attachments.length > 0) {
+            const ul = document.createElement('ul');
+            ul.className = 'list-group list-group-flush small';
+            attachments.forEach(att => {
+                const li = document.createElement('li');
+                li.className = 'list-group-item d-flex justify-content-between align-items-center p-1';
+                li.innerHTML = `
+                    <a href="/cardwatch/bookkeeping/files/${att.file_path}" target="_blank">${att.file_path.split('/').pop()}</a>
+                    <button type="button" class="btn btn-sm btn-outline-danger ms-2" onclick="deleteAttachment(${att.id}, this)">🗑️</button>
+                `;
+                ul.appendChild(li);
+            });
+            filesDiv.appendChild(ul);
         } else {
-            fileDiv.textContent = 'No current attachment.';
+            filesDiv.innerHTML += '<span class="text-muted">None</span>';
         }
 
         // Form Action
@@ -569,7 +838,8 @@
                 const eur = this.dataset.eur;
                 const chf = this.dataset.chf;
                 const rate = this.dataset.rate;
-                const file = this.dataset.file;
+                // const file = this.dataset.file; Legacy
+                const attachments = JSON.parse(this.dataset.attachments || '[]');
                 const isPrivate = this.dataset.private;
                 const marketVal = this.dataset.market;
                 const needsDecl = (this.dataset.needs_decl === '1' || this.dataset.needs_decl === 'True');
@@ -584,6 +854,29 @@
 
                 const isPriv = (isPrivate === '1' || isPrivate === 'True');
                 document.getElementById('detailPrivate').textContent = isPriv ? "Yes" : "No";
+
+                // Distribution Info (Shipping)
+                const distAmount = parseFloat(this.dataset.dist || 0);
+                const undistAmount = parseFloat(this.dataset.undist || 0);
+                const detailDistDiv = document.getElementById('detailDistribution');
+
+                if (type.toLowerCase() === 'cost' && Math.abs(distAmount + undistAmount) > 0.01) {
+                    detailDistDiv.classList.remove('d-none');
+                    document.getElementById('detailDistTotal').textContent = distAmount.toFixed(2);
+
+                    const undistEl = document.getElementById('detailUndistTotal');
+                    undistEl.textContent = undistAmount.toFixed(2);
+
+                    if (Math.abs(undistAmount) > 0.05) {
+                        undistEl.className = "text-danger fw-bold";
+                        undistEl.innerHTML += " ⚠️";
+                    } else {
+                        undistEl.className = "text-success";
+                        undistEl.innerHTML += " ✅";
+                    }
+                } else {
+                    detailDistDiv.classList.add('d-none');
+                }
 
                 // Declaration Logic
                 const declSection = document.getElementById('declarationSection');
@@ -618,7 +911,7 @@
                     document.getElementById('detailMarketValP').classList.add('d-none');
                 }
 
-                // File Logic
+                // File Logic (Details)
                 const fileContainer = document.getElementById('fileLinkContainer');
                 fileContainer.innerHTML = '';
 
@@ -626,16 +919,23 @@
                 const existingDecls = fileContainer.parentElement.querySelectorAll('.linked-declarations-list');
                 existingDecls.forEach(el => el.remove());
 
-                if (file && file !== 'None') {
-                    const url = "/cardwatch/bookkeeping/files/" + file;
-                    const ext = file.split('.').pop().toLowerCase();
-                    if (['jpg', 'jpeg', 'png', 'gif'].includes(ext)) {
-                        fileContainer.innerHTML = `<a href="${url}" target="_blank"><img src="${url}" class="img-fluid rounded border" style="max-height: 300px;"></a>`;
-                    } else {
-                        fileContainer.innerHTML = `<a href="${url}" target="_blank" class="btn btn-outline-primary">Download / View File</a>`;
-                    }
+                if (attachments.length > 0) {
+                    attachments.forEach(att => {
+                        const url = "/cardwatch/bookkeeping/files/" + att.file_path;
+                        const ext = att.file_path.split('.').pop().toLowerCase();
+
+                        const wrapper = document.createElement('div');
+                        wrapper.className = 'mb-2';
+
+                        if (['jpg', 'jpeg', 'png', 'gif'].includes(ext)) {
+                            wrapper.innerHTML = `<a href="${url}" target="_blank"><img src="${url}" class="img-fluid rounded border" style="max-height: 200px;"></a>`;
+                        } else {
+                            wrapper.innerHTML = `<a href="${url}" target="_blank" class="btn btn-outline-primary btn-sm">Download ${att.file_path.split('/').pop()}</a>`;
+                        }
+                        fileContainer.appendChild(wrapper);
+                    });
                 } else {
-                    fileContainer.textContent = "No attachment.";
+                    fileContainer.textContent = "No attachments.";
                 }
 
                 // Linked Declarations
@@ -717,6 +1017,20 @@
             });
         });
     });
+
+    function deleteAttachment(id, btn) {
+        if (!confirm("Delete this attachment?")) return;
+
+        fetch(`/cardwatch/bookkeeping/delete-attachment/${id}`, { method: 'POST' })
+            .then(res => res.json())
+            .then(res => {
+                if (res.success) {
+                    btn.closest('li').remove();
+                } else {
+                    alert("Failed to delete.");
+                }
+            });
+    }
 
     function uploadReceipt(input) {
         if (!input.files || !input.files[0]) return;
@@ -945,8 +1259,9 @@
             <div class="modal-body">
                 <div class="mb-3">
                     <label class="form-label">Link Type</label>
-                    <select id="linkType" class="form-select">
+                    <select id="linkType" class="form-select" onchange="updateTargetPreview()">
                         <option value="shipping_distribution">Distribute Shipping Cost (Source -> Targets)</option>
+                        <option value="processing_distribution">Distribute Processing Cost (Source -> Targets)</option>
                         <option value="declaration_distribution">Distribute Declaration Cost (Source -> Targets)
                         </option>
                         <option value="acquisition_source">Set Acquisition Source (Sale -> Purchase)</option>
@@ -1131,11 +1446,16 @@
         const entries = [];
         checked.forEach(cb => {
             const row = cb.closest('tr');
+            const currency = row.dataset.currency || 'EUR';
+            // Use the amount corresponding to the original currency
+            const amt = (currency === 'CHF') ? parseFloat(row.dataset.chf) : parseFloat(row.dataset.eur);
+
             entries.push({
                 id: cb.value,
                 date: row.dataset.date,
                 desc: row.dataset.desc,
-                amt: parseFloat(row.dataset.eur),
+                amt: amt,
+                currency: currency,
                 type: row.dataset.type
             });
         });
@@ -1144,8 +1464,9 @@
         entries.forEach(e => {
             const opt = document.createElement('option');
             opt.value = e.id;
-            opt.text = `${e.date} - ${e.desc} (${e.amt.toFixed(2)} EUR)`;
-            opt.dataset.amt = e.amt; // Store for calculation
+            opt.text = `${e.date} - ${e.desc} (${e.amt.toFixed(2)} ${e.currency})`;
+            opt.dataset.amt = e.amt;
+            opt.dataset.currency = e.currency;
             sourceSelect.add(opt);
         });
 
@@ -1165,6 +1486,8 @@
 
         const listDiv = document.getElementById('existingLinksList');
         const container = document.getElementById('existingLinksSection');
+        // Get currency for display label
+        const currency = sourceSelect.options[sourceSelect.selectedIndex].dataset.currency || 'EUR';
 
         fetch(`{{ url_for('bookkeeping.get_entry_links') }}?source_id=${sourceSelect.value}`)
             .then(res => res.json())
@@ -1177,7 +1500,7 @@
                         item.className = "list-group-item d-flex justify-content-between align-items-center";
                         item.innerHTML = `
                         <div>
-                            <span class="fw-bold">${l.amount.toFixed(2)} EUR</span> to 
+                            <span class="fw-bold">${l.amount.toFixed(2)} ${currency}</span> to 
                             <span class="text-muted small">${l.target_date}</span> ${l.target_desc.substring(0, 30)}...
                         </div>
                         <button class="btn btn-sm btn-outline-danger" onclick="removeLink(${l.id})">Unlink</button>
@@ -1190,6 +1513,8 @@
             });
     }
 
+    let linkChangesMade = false;
+
     function removeLink(linkId) {
         if (!confirm("Are you sure you want to unlink and revert the cost distribution?")) return;
 
@@ -1201,26 +1526,34 @@
             .then(res => res.json())
             .then(data => {
                 if (data.success) {
-                    // Refresh links list
+                    linkChangesMade = true;
                     fetchExistingLinks();
-                    // We should also reload page if successful to reflect cost changes in table?
-                    // Or just keep modal open.
-                    // Reload on modal close? 
-                    // Let's reload page for simplicity to show updated costs in table immediately or warn user?
-                    // Ideally update UI... but reloading is safest.
-                    location.reload();
+                    // location.reload(); // Removed to keep modal open
                 } else {
                     alert("Error: " + data.error);
                 }
             });
     }
 
+    document.addEventListener('DOMContentLoaded', function () {
+        const linkModal = document.getElementById('linkEntriesModal');
+        linkModal.addEventListener('show.bs.modal', function () {
+            linkChangesMade = false;
+        });
+        linkModal.addEventListener('hidden.bs.modal', function () {
+            if (linkChangesMade) {
+                location.reload();
+            }
+        });
+    });
+
     function updateTargetPreview() {
         const sourceSelect = document.getElementById('linkSourceId');
         const selectedSourceId = sourceSelect.value;
         const sourceAmt = parseFloat(sourceSelect.options[sourceSelect.selectedIndex].dataset.amt || 0);
+        const currency = sourceSelect.options[sourceSelect.selectedIndex].dataset.currency || 'EUR';
 
-        document.getElementById('sourceTotal').textContent = sourceAmt.toFixed(2);
+        document.getElementById('sourceTotal').textContent = sourceAmt.toFixed(2) + ' ' + currency;
 
         const container = document.getElementById('targetListContainer');
         container.innerHTML = "";
@@ -1234,26 +1567,38 @@
                 targets.push({
                     id: cb.value,
                     desc: row.dataset.desc,
-                    date: row.dataset.date
+                    date: row.dataset.date,
+                    // Capture both EUR and CHF for correct basis calculation
+                    amt_eur: parseFloat(row.dataset.eur || 0),
+                    amt_chf: parseFloat(row.dataset.chf || 0)
                 });
             }
         });
 
         if (targets.length === 0) return;
 
-        // Default Even Split
+        const linkType = document.getElementById('linkType').value;
         const defaultShare = sourceAmt / targets.length;
 
         targets.forEach(t => {
+            let val = defaultShare;
+
+            if (linkType === 'declaration_distribution') {
+                // If Source is CHF, calculate 8.1% of Target's CHF value
+                // If Source is EUR, calculate 8.1% of Target's EUR value (unlikely for Swiss VAT but logical fallback)
+                const basis = (currency === 'CHF') ? t.amt_chf : t.amt_eur;
+                val = basis * 0.081;
+            }
+
             const div = document.createElement('div');
             div.className = "input-group mb-2";
             div.innerHTML = `
                 <span class="input-group-text small" style="width: 250px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis;" title="${t.desc}">${t.date} - ${t.desc}</span>
                 <input type="number" step="0.01" class="form-control target-allocation" 
-                    value="${defaultShare.toFixed(2)}" 
+                    value="${val.toFixed(2)}" 
                     data-id="${t.id}"
                     oninput="recalcRemaining()">
-                <span class="input-group-text">EUR</span>
+                <span class="input-group-text">${currency}</span>
             `;
             container.appendChild(div);
         });
@@ -1279,6 +1624,47 @@
         } else {
             remSpan.className = "text-success";
         }
+    }
+
+    // --- Currency Logic ---
+    function toggleAutoRate(prefix) {
+        const isAuto = document.getElementById(prefix + 'AutoRate').checked;
+        const rateInput = document.getElementById(prefix + 'Rate');
+        rateInput.disabled = isAuto;
+
+        if (isAuto) {
+            fetchRate(prefix);
+        }
+    }
+
+    function fetchRate(prefix) {
+        const isAutoElement = document.getElementById(prefix + 'AutoRate');
+        if (!isAutoElement) return;
+
+        const isAuto = isAutoElement.checked;
+        if (!isAuto) return;
+
+        const dateInput = document.getElementById(prefix + 'Date');
+        const currencyInput = document.getElementById(prefix + 'Currency');
+
+        if (!dateInput || !currencyInput) return;
+
+        const date = dateInput.value;
+        const currency = currencyInput.value;
+
+        // If currency is CHF, fetch EUR rate (because valid rate is always EUR->CHF)
+        const fetchCurr = (currency === 'CHF') ? 'EUR' : currency;
+
+        if (!date) return;
+
+        fetch(`{{ url_for('bookkeeping.get_exchange_rate') }}?date=${date}&currency=${fetchCurr}`)
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    const rateInput = document.getElementById(prefix + 'Rate');
+                    if (rateInput) rateInput.value = data.rate;
+                }
+            });
     }
 
     function submitLinkEntries() {
@@ -1316,6 +1702,78 @@
                 } else {
                     alert("Error: " + data.error);
                 }
+            });
+    }
+</script>
+
+<!-- Upload Shipping Modal -->
+<div class="modal fade" id="uploadShippingModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Upload Shipping Invoices</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">Select Shipping PDFs</label>
+                    <input type="file" id="shippingFiles" class="form-control" accept=".pdf" multiple>
+                    <div class="form-text">Select multiple invoice PDFs (ship*.pdf).</div>
+                </div>
+                <div id="shippingUploadStatus" class="alert d-none"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" onclick="uploadShipping()">Upload & Process</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    function uploadShipping() {
+        const fileInput = document.getElementById('shippingFiles');
+        const files = fileInput.files;
+        if (files.length === 0) return;
+
+        const statusDiv = document.getElementById('shippingUploadStatus');
+        statusDiv.className = 'alert alert-info';
+        statusDiv.textContent = 'Uploading and processing...';
+        statusDiv.classList.remove('d-none');
+
+        const formData = new FormData();
+        for (let i = 0; i < files.length; i++) {
+            formData.append('shipping_files', files[i]);
+        }
+
+        fetch('/cardwatch/bookkeeping/upload-shipping', {
+            method: 'POST',
+            body: formData
+        })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    const r = data.results;
+                    let msg = `Done! Processed: ${r.processed}. Added: ${r.added}. Duplicates detected: ${r.duplicates}.`;
+                    if (r.errors.length > 0) {
+                        msg += '<br>Errors:<br>' + r.errors.join('<br>');
+                        statusDiv.className = 'alert alert-warning';
+                    } else {
+                        statusDiv.className = 'alert alert-success';
+                    }
+                    statusDiv.innerHTML = msg;
+
+                    if (r.added > 0) {
+                        setTimeout(() => location.reload(), 2000);
+                    }
+                } else {
+                    statusDiv.className = 'alert alert-danger';
+                    statusDiv.textContent = 'Error: ' + data.error;
+                }
+            })
+            .catch(err => {
+                statusDiv.className = 'alert alert-danger';
+                statusDiv.textContent = 'Request failed.';
             });
     }
 </script>
