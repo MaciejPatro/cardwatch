@@ -38,6 +38,12 @@
         <button class="btn btn-secondary ms-2" data-bs-toggle="modal" data-bs-target="#uploadShippingModal">
             📦 Upload Shipping
         </button>
+        <button class="btn btn-secondary ms-2" data-bs-toggle="modal" data-bs-target="#uploadPlatformPairModal">
+            🔄 Upload Pair
+        </button>
+        <button class="btn btn-warning ms-2" onclick="performUndo()">
+            <i class="bi bi-arrow-counterclockwise"></i> Undo
+        </button>
         <input type="file" id="receiptInput" class="d-none" accept="image/*" onchange="uploadReceipt(this)">
     </div>
 </div>
@@ -1265,6 +1271,8 @@
                         <option value="declaration_distribution">Distribute Declaration Cost (Source -> Targets)
                         </option>
                         <option value="acquisition_source">Set Acquisition Source (Sale -> Purchase)</option>
+                        <option value="private_distribution">Distribute Private Collection Cost (Source -> Targets)
+                        </option>
                     </select>
                 </div>
 
@@ -1775,6 +1783,96 @@
                 statusDiv.className = 'alert alert-danger';
                 statusDiv.textContent = 'Request failed.';
             });
+    }
+</script>
+
+<!-- Upload Platform Pair Modal -->
+<div class="modal fade" id="uploadPlatformPairModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Upload Gain/Payout Pair</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">Select Files (Gain PDF + Payout PDF)</label>
+                    <input type="file" id="pairFiles" class="form-control" accept=".pdf" multiple>
+                    <div class="form-text">Upload both the "Payment confirmation" and "Payout Report" PDFs. The system
+                        will match them.</div>
+                </div>
+                <div id="pairUploadStatus" class="alert d-none"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" onclick="uploadPlatformPair()">Upload & Process</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    function uploadPlatformPair() {
+        const fileInput = document.getElementById('pairFiles');
+        const files = fileInput.files;
+        if (files.length === 0) return;
+
+        const statusDiv = document.getElementById('pairUploadStatus');
+        statusDiv.className = 'alert alert-info';
+        statusDiv.textContent = 'Uploading and processing...';
+        statusDiv.classList.remove('d-none');
+
+        const formData = new FormData();
+        for (let i = 0; i < files.length; i++) {
+            formData.append('pair_files', files[i]);
+        }
+
+        fetch('/cardwatch/bookkeeping/upload-platform-pair', {
+            method: 'POST',
+            body: formData
+        })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    const r = data.results;
+                    let msg = `Done! Processed Pairs: ${r.processed_pairs}. Orphans: ${r.orphans}.`;
+                    if (r.errors.length > 0) {
+                        msg += '<br>Errors:<br>' + r.errors.join('<br>');
+                        statusDiv.className = 'alert alert-warning';
+                    } else {
+                        statusDiv.className = 'alert alert-success';
+                    }
+                    statusDiv.innerHTML = msg;
+
+                    if (r.processed_pairs > 0) {
+                        setTimeout(() => location.reload(), 2000);
+                    }
+                } else {
+                    statusDiv.className = 'alert alert-danger';
+                    statusDiv.textContent = 'Error: ' + data.error;
+                }
+            })
+            .catch(err => {
+                statusDiv.className = 'alert alert-danger';
+                statusDiv.textContent = 'Request failed.';
+            });
+    }
+
+    function performUndo() {
+        if (!confirm("Undo last operation?")) return;
+        fetch("{{ url_for('bookkeeping.undo_last_action') }}", {
+            method: 'POST'
+        })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    alert(data.message);
+                    location.reload();
+                } else {
+                    alert("Error: " + data.error);
+                }
+            })
+            .catch(err => alert("Undo failed: " + err));
     }
 </script>
 {% endblock %}
