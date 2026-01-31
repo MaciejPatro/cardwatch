@@ -39,8 +39,9 @@ from logging_config import configure_logging
 
 app = Flask(__name__)
 app.config.from_object(Config)
-configure_logging(app)
 
+
+configure_logging(app)
 SINGLE_CARD_UPLOAD_FOLDER = os.path.join(app.config['MEDIA_ROOT'], "single_card_images")
 os.makedirs(SINGLE_CARD_UPLOAD_FOLDER, exist_ok=True)
 

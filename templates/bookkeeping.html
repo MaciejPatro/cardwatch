@@ -130,12 +130,7 @@
                         {"desc": "{{ link.target.description }}", "amount": {{ link.target.amount_eur if link.target.original_currency == "EUR" else link.target.amount_chf }}, "currency": "{{ link.target.original_currency }}", "file": "{{ link.target.file_path or "" }}"}
                         {% if not loop.last %},{% endif %}
                     {% endfor %}
-                ]' data-items='[
-                    {% for item in entry.entry_items|default(entry.items) %}
-                        {"name": "{{ item.name }}", "price": {{ item.price }}, "extra": {{ item.extra_costs }}}
-                        {% if not loop.last %},{% endif %}
-                    {% endfor %}
-                ]'>
+                ]' data-items='{{ (entry.entry_items|default(entry.items))|map(attribute="to_dict")|list|tojson }}'>
                 <td>
                     <div class="d-flex align-items-center" style="padding-left: 5px;">
                         {# Tree Logic #}
@@ -310,28 +305,33 @@
 </script>
 
 <!-- Monthly Totals Footer -->
-<div class="fixed-bottom bg-white border-top shadow-lg p-3">
-    <div class="container d-flex justify-content-around align-items-center">
-        <div class="text-center">
+<nav class="navbar fixed-bottom navbar-light bg-light border-top">
+    <div class="container-fluid justify-content-around text-center">
+        <div>
             <small class="text-muted d-block">Monthly Revenue</small>
-            <span class="h5 text-success mb-0">+{{ "%.2f"|format(total_revenue_chf) }} CHF</span>
+            <span class="fw-bold text-success">+{{ "%.2f"|format(total_revenue_chf) }} CHF</span>
         </div>
-        <div class="text-center border-start border-end px-5">
-            <small class="text-muted d-block">Net Result</small>
-            <span class="h4 fw-bold {% if net_result_chf >= 0 %}text-success{% else %}text-danger{% endif %} mb-0">
+        <div class="border-start border-end px-4">
+            <small class="text-muted d-block">Net Income</small>
+            <span class="fw-bold {% if net_result_chf >= 0 %}text-success{% else %}text-danger{% endif %}">
                 {{ "%.2f"|format(net_result_chf) }} CHF
             </span>
         </div>
-        <div class="text-center">
-            <small class="text-muted d-block">Monthly Expenses</small>
-            <span class="h5 text-danger mb-0">-{{ "%.2f"|format(total_expense_chf) }} CHF</span>
+        <div>
+            <small class="text-muted d-block">Monthly Expenses <span
+                    title="Excludes Private Collection Costs">ℹ️</span></small>
+            <span class="fw-bold text-danger">-{{ "%.2f"|format(total_expense_chf) }} CHF</span>
         </div>
-        <div class="text-center border-start ps-5">
+        <div class="border-start px-4">
+            <small class="text-muted d-block">Private Costs</small>
+            <span class="fw-bold text-secondary">{{ "%.2f"|format(total_private_costs_chf) }} CHF</span>
+        </div>
+        <div>
             <small class="text-muted d-block">Total Stock Value</small>
-            <span class="h5 text-primary mb-0">{{ "%.2f"|format(total_stock_value_chf) }} CHF</span>
+            <span class="fw-bold text-primary">{{ "%.2f"|format(total_stock_value_chf|default(0)) }} CHF</span>
         </div>
     </div>
-</div>
+</nav>
 <!-- Add spacer for fixed footer -->
 <div style="height: 100px;"></div>
 
@@ -641,9 +641,30 @@
                         <div class="form-text">Check this if tax is included or not required to suppress warnings.</div>
                     </div>
                 </div>
+                <div class="mb-3 border-top pt-3">
+                    <label class="form-label d-flex justify-content-between">
+                        <span>Items</span>
+                        <button type="button" class="btn btn-sm btn-outline-success" onclick="addEditItemRow()">+ Add
+                            Item</button>
+                    </label>
+                    <table class="table table-sm table-bordered" id="editItemsTable">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th style="width: 100px;">Price</th>
+                                <th style="width: 50px;"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- Populated by JS -->
+                        </tbody>
+                    </table>
+                    <input type="hidden" name="items_json" id="editItemsJson">
+                </div>
+
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                    <button type="submit" class="btn btn-primary">Save Changes</button>
+                    <button type="button" class="btn btn-primary" onclick="submitEditEntry()">Save Changes</button>
                 </div>
             </form>
         </div>
@@ -825,11 +846,55 @@
             filesDiv.innerHTML += '<span class="text-muted">None</span>';
         }
 
+        // --- Items Logic (New) ---
+        const items = JSON.parse(row.dataset.items || '[]');
+        const itemsBody = document.querySelector('#editItemsTable tbody');
+        itemsBody.innerHTML = '';
+        if (items.length > 0) {
+            items.forEach(i => addEditItemRow(i.name, i.price, i.id));
+        } else {
+            // Optional: Add empty row if 0 items? Or let user add.
+            // addEditItemRow(); 
+        }
+
         // Form Action
         const form = document.getElementById('editEntryForm');
         form.action = `/cardwatch/bookkeeping/edit/${id}`;
 
         new bootstrap.Modal(document.getElementById('editEntryModal')).show();
+    }
+
+    // --- Items Helper Functions ---
+    function addEditItemRow(name = '', price = 0, id = null) {
+        const tbody = document.querySelector('#editItemsTable tbody');
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td>
+                <input type="text" class="form-control form-control-sm item-name" value="${name}" placeholder="Item Name">
+                <input type="hidden" class="item-id" value="${id || ''}">
+            </td>
+            <td>
+                <input type="number" step="0.01" class="form-control form-control-sm item-price" value="${price}">
+            </td>
+            <td>
+                <button type="button" class="btn btn-sm btn-outline-danger" onclick="this.closest('tr').remove()">x</button>
+            </td>
+        `;
+        tbody.appendChild(tr);
+    }
+
+    function submitEditEntry() {
+        const items = [];
+        document.querySelectorAll('#editItemsTable tbody tr').forEach(tr => {
+            const name = tr.querySelector('.item-name').value;
+            const price = parseFloat(tr.querySelector('.item-price').value || 0);
+            const id = tr.querySelector('.item-id').value;
+            if (name) {
+                items.push({ id: id, name: name, price: price });
+            }
+        });
+        document.getElementById('editItemsJson').value = JSON.stringify(items);
+        document.getElementById('editEntryForm').submit();
     }
 
 
@@ -1271,8 +1336,6 @@
                         <option value="declaration_distribution">Distribute Declaration Cost (Source -> Targets)
                         </option>
                         <option value="acquisition_source">Set Acquisition Source (Sale -> Purchase)</option>
-                        <option value="private_distribution">Distribute Private Collection Cost (Source -> Targets)
-                        </option>
                     </select>
                 </div>
 
