@@ -242,3 +242,225 @@ def parse_cardmarket_invoice(pdf_path):
                 pass
 
     return data
+
+def parse_ebay_invoice(pdf_path):
+    """
+    Parses an Ebay PDF invoice.
+    """
+    print(f"Parsing Ebay {pdf_path}...")
+    try:
+        args = ["pdftotext", "-layout", pdf_path, "-"]
+        result = subprocess.run(args, capture_output=True, text=True)
+        text = result.stdout
+    except Exception as e:
+        print(f"Error: {e}")
+        return None
+
+    data = {
+        "order_id": None,
+        "date": None,
+        "seller_name": "eBay", # Default, maybe extract specific seller?
+        "total_amount": 0.0,
+        "currency": "USD",
+        "shipping_cost": 0.0,
+        "vat_cost": 0.0,
+        "items": []
+    }
+    
+    # 1. Order ID: Bestellnr. 19-14145-56417
+    # "Bestellnr.         19-14145-56417"
+    order_match = re.search(r"Bestellnr\.\s+([\d-]+)", text)
+    if order_match:
+        data["order_id"] = order_match.group(1)
+
+    # 2. Date: Kaufdatum 27. Jan 2026
+    # "Kaufdatum          27. Jan 2026"
+    date_match = re.search(r"Kaufdatum\s+(\d{2}\.\s+\w{3}\s+\d{4})", text)
+    if date_match:
+        d_str = date_match.group(1)
+        # Handle German months if needed: Jan, Feb, Mär, Apr, Mai, Jun, Jul, Aug, Sep, Okt, Nov, Dez
+        # Mapping for standard English
+        replacements = {
+            "Mär": "Mar", "Mai": "May", "Okt": "Oct", "Dez": "Dec"
+        }
+        for k, v in replacements.items():
+            d_str = d_str.replace(k, v)
+        try:
+             # Try parse "27. Jan 2026"
+             # Remove '.' after day if strptime needs specific format
+             # "27. Jan 2026" -> "%d. %b %Y"
+             dt = datetime.strptime(d_str, "%d. %b %Y")
+             data["date"] = dt.strftime("%Y-%m-%d")
+        except ValueError:
+             pass
+
+    # 3. Seller: "Von: eBay Marketplaces GmbH" (or similar)
+    # The actual seller of item is usually listed in items or descriptions?
+    # PDF Header: "Von: eBay Marketplaces GmbH" (This is the invoicer, but platform is Ebay)
+    # Let's keep seller_name as "eBay (Order ID)" or similar?
+    # The receipt says "Rechnung Von: eBay...".
+    # But usually we buy from a user.
+    # The snippet shows "Sold by..." isn't obvious in header.
+    # We'll use "eBay" for now.
+    
+    # 4. Totals and Currency
+    # Look for "Gesamtbetrag" and then currency pattern
+    # Regex: Gesamtbetrag\s+(US|USD|EUR)\s*\$?([\d.,]+)
+    # Handle missing space: GesamtbetragUS
+    total_match = re.search(r"Gesamtbetrag\s*(?:[A-Z]{2,3})?\s*\$?([\d.,]+)", text)
+    if total_match:
+        # Currency might be jammed or separated
+        # Check text around match or default to USD if "US" found
+        if "EUR" in total_match.group(0): data["currency"] = "EUR"
+        else: data["currency"] = "USD"
+        
+        amt_str = total_match.group(1)
+        amt_str = amt_str.replace('.', '').replace(',', '.')
+        data["total_amount"] = float(amt_str)
+        
+    # 5. Shipping & VAT (Summary block at bottom)
+    # Flexible regex because spaces might be lost: "VersandkostenUS $34,00"
+    
+    # Shipping:
+    ship_match = re.search(r"Versandkosten\s*(?:[A-Z]{2,3})?\s*\$?([\d.,]+)", text)
+    if ship_match:
+         s_str = ship_match.group(1).replace('.', '').replace(',', '.')
+         data["shipping_cost"] = float(s_str)
+         
+    # MwSt / VAT:
+    # Look for "MwSt." followed by amount in the summary block.
+    # Handle indentation: "(?:^|\n)\s*MwSt\."
+    vat_matches = re.finditer(r"(?:^|\n)\s*MwSt\.\s*(?:[A-Z]{2,3})?\s*\$?([\d.,]+)", text)
+    for m in vat_matches:
+         v_str = m.group(1).replace('.', '').replace(',', '.')
+         data["vat_cost"] = float(v_str)
+
+    # 6. Items
+    lines = text.split('\n')
+    
+    data["items"] = []
+    
+    pending_desc = []
+    current_item = None
+    
+    # Headers/Garbage to ignore
+    ignore_starts = ["Rechnungsdetails", "Artikelnr", "Rechnungsnummer", "Rechnungsdatum", "Bestellnr", "Kaufdatum", "Versand aus", "Rechnung", "Von:", "Adresse", "Lieferadresse", "MwSt.-", "Satz", "Betrag", "Nettobetrag", "Versandkosten", "Gesamtbetrag", "MwSt.", "Kosten)"]
+    
+    # Garbage exact matches (e.g. columns wrapping)
+    ignore_exact = ["US", "EUR", "CHF", "Satz       Betrag", "Betrag", "Kosten", "$0,00", "US $0,00"]
+
+    for line in lines:
+        line_s = line.strip()
+        
+        # RESET on Blank Line (Crucial for separating items from previous footer garbage)
+        if not line_s:
+            current_item = None
+            current_items = None
+            continue
+        
+        # Check for Ignorable Headers
+        if any(line_s.startswith(x) for x in ignore_starts):
+            current_item = None
+            current_items = None
+            pending_desc = [] 
+            continue
+            
+        if line_s in ignore_exact:
+            continue
+
+        # Check for Item ID start (12 digits)
+        id_match = re.match(r"^(\d{12})(.*)$", line_s)
+        
+        if id_match:
+             # NEW ITEM START
+             rest_of_line = id_match.group(2)
+             
+             # Extract financials from this line
+             fin_match = re.search(r"(\d+)\s*(?:US|EUR|CHF)\s*\$?([\d.,]+)", rest_of_line)
+             
+             price_val = 0.0
+             qty = 1
+             desc_part = rest_of_line
+             
+             if fin_match:
+                  qty_str = fin_match.group(1)
+                  price_str = fin_match.group(2).replace('.', '').replace(',', '.')
+                  price_val = float(price_str)
+                  
+                  desc_part = rest_of_line[:fin_match.start()].strip()
+                  
+                  # Handle Quantity Collision
+                  if len(qty_str) > 1 and int(qty_str) > 10:
+                        suffix = qty_str[:-1]
+                        desc_part += " " + suffix
+                        qty = int(qty_str[-1]) # Assume last digit is qty if collision? Heuristic. 
+                        # Actually, usually '1' is the quantity. If collision: "Card Game1".
+                        # If Qty is 10? "Card Game10".
+                        # Let's rely on fin_match regex: (\d+).
+                        # If regex grabbed "1", then qty is 1. 
+                  else:
+                        qty = int(qty_str)
+                  
+             # Cleanup specific garbage from desc_part if any
+             desc_part = re.sub(r"US\s*\$[\d.,]+", "", desc_part).strip()
+                  
+             # Assemble Name
+             full_name = " ".join(pending_desc) + " " + desc_part
+             full_name = full_name.strip()
+             
+             # Shorten Logic
+             hash_match = re.search(r"(#\S+.*)", full_name)
+             if hash_match:
+                 full_name = hash_match.group(1)
+            
+             # Create items based on quantity
+             for _ in range(qty):
+                 new_item = {"name": full_name, "price": price_val}
+                 data["items"].append(new_item)
+             
+             # Track the last added item (pointer to the last copy? Or just one of them to append description?)
+             # Usually description flows to all copies.
+             # But if we have 5 items in list, we must update ALL 5 if description continues?
+             # Or just assume description is fully captured?
+             # Looking at PDF, description CAN continue: "Card Game" on line 29.
+             # So we need to update all items generated from this ID.
+             # Let's store a list of current_items
+             current_items = data["items"][-qty:] # The last 'qty' items
+             
+             pending_desc = []
+             
+        elif 'current_items' in locals() and current_items:
+             # Check for page numbers
+             if re.search(r"\d+\s+of\s+\d+", line_s): continue
+             
+             # Strip Garbage (Financial columns wrapping)
+             clean_line = re.sub(r"(?:US|EUR|CHF)?\s*\$\s*[\d.,]+", "", line_s).strip()
+             
+             # If line becomes empty or just symbols, ignore
+             if not clean_line or re.match(r"^[\d.,%]+$", clean_line):
+                 continue
+                 
+             # Also ignore standalone currency noise which regex might miss if logic differs
+             if clean_line in ["US", "EUR", "CHF", "$0,00"]: continue
+
+             for item in current_items:
+                 item["name"] += " " + clean_line
+                 
+                 # Re-apply Shorten Logic
+                 if "#" in item["name"]:
+                     hm = re.search(r"(#\S+.*)", item["name"])
+                     if hm: item["name"] = hm.group(1)
+                 
+        else:
+             # Pending description for NEXT item
+             if re.search(r"\d+\s+of\s+\d+", line_s): continue
+             
+             # Don't capture footer summary garbage as pending desc
+             if re.search(r"(?:US|EUR|CHF)?\s*\$\s*[\d.,]{3,}", line_s): continue 
+             
+             # More aggressive garbage filter for pending
+             if line_s in ignore_exact: continue
+             
+             pending_desc.append(line_s)
+                  
+    return data

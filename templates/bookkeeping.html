@@ -27,10 +27,13 @@
             + Add Entry
         </button>
         <button class="btn btn-success ms-2" data-bs-toggle="modal" data-bs-target="#uploadInvoiceModal">
-            📄 Auto-Add from Invoice
+            📄 Add from Cardmarket
         </button>
-        <button class="btn btn-info ms-2" data-bs-toggle="modal" data-bs-target="#uploadRatesModal">
-            💱 Upload Rates
+        <button class="btn btn-primary ms-2" data-bs-toggle="modal" data-bs-target="#uploadEbayModal">
+            🛒 Add from Ebay
+        </button>
+        <button class="btn btn-info ms-2" onclick="openRatesModal()">
+            💱 Manage Rates
         </button>
         <button class="btn btn-dark ms-2" onclick="document.getElementById('receiptInput').click()">
             🧾 Scan Receipt
@@ -39,7 +42,7 @@
             📦 Upload Shipping
         </button>
         <button class="btn btn-secondary ms-2" data-bs-toggle="modal" data-bs-target="#uploadPlatformPairModal">
-            🔄 Upload Pair
+            🔄 Add from Payrexx
         </button>
         <button class="btn btn-warning ms-2" onclick="performUndo()">
             <i class="bi bi-arrow-counterclockwise"></i> Undo
@@ -106,9 +109,9 @@
                 <th style="width: 40px;"><input type="checkbox" id="selectAll" class="form-check-input"></th>
                 <th>Date</th>
                 <th>Description</th>
-                <th class="text-end">Amount (EUR)</th>
-                <th class="text-end">Amount (CHF)</th>
-                <th class="text-end">Income</th>
+                <th class="text-end">Amount</th>
+                <th class="text-end">Amount CHF</th>
+                <th class="text-end">Income CHF</th>
                 <th class="text-center">Type</th>
                 <th class="text-center">Sub-Type</th>
                 <th class="text-center">Pvt. Col.</th>
@@ -180,7 +183,19 @@
                     </div>
                     {% endif %}
                 </td>
-                <td class="text-end">{{ "%.2f"|format(entry.display_eur|default(entry.amount_eur)) }}</td>
+                <td class="text-end">
+                    {% if entry.original_currency == 'EUR' %}
+                    €{{ "%.2f"|format(entry.display_eur|default(entry.amount_eur)) }}
+                    {% elif entry.original_currency == 'USD' %}
+                    {% set rate = entry.exchange_rate or 1.0 %}
+                    {% set amt_usd = (entry.display_chf|default(entry.amount_chf) / rate) if rate > 0 else 0 %}
+                    ${{ "%.2f"|format(amt_usd) }}
+                    {% elif entry.original_currency == 'CHF' %}
+                    CHF {{ "%.2f"|format(entry.display_chf|default(entry.amount_chf)) }}
+                    {% else %}
+                    {{ entry.original_currency }} {{ "%.2f"|format(entry.display_eur|default(entry.amount_eur)) }}
+                    {% endif %}
+                </td>
                 <td class="text-end">{{ "%.2f"|format(entry.display_chf|default(entry.amount_chf)) }}</td>
                 <td class="text-end fw-bold">
                     {% if entry.profit_display %}
@@ -439,6 +454,7 @@
                             <select name="currency" id="addCurrency" class="form-select" required
                                 onchange="fetchRate('add')">
                                 <option value="EUR">EUR</option>
+                                <option value="USD">USD</option>
                                 <option value="CHF">CHF</option>
                             </select>
                         </div>
@@ -547,6 +563,172 @@
 </div>
 </div>
 
+<!-- Manage Rates Modal -->
+<div class="modal fade" id="manageRatesModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Manage Exchange Rates</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <ul class="nav nav-tabs mb-3" id="ratesTab" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" id="upload-tab" data-bs-toggle="tab"
+                            data-bs-target="#upload-rates-pane" type="button" role="tab">Upload PDF</button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="manual-tab" data-bs-toggle="tab"
+                            data-bs-target="#manual-rates-pane" type="button" role="tab" onclick="loadRates(1)">View
+                            Rates</button>
+                    </li>
+                </ul>
+                <div class="tab-content">
+                    <!-- Upload Pane -->
+                    <div class="tab-pane fade show active" id="upload-rates-pane" role="tabpanel">
+                        <form id="uploadRatesForm" onsubmit="event.preventDefault(); handleRateUpload();"
+                            enctype="multipart/form-data">
+                            <div class="mb-3">
+                                <label class="form-label">Swiss Customs Rate PDF (EUR & USD supported)</label>
+                                <input type="file" name="pdf_file" id="newRatesFile" class="form-control"
+                                    accept="application/pdf" required>
+                            </div>
+                            <div id="newRatesStatus" class="alert d-none"></div>
+                            <button type="submit" class="btn btn-primary">Upload & Parse</button>
+                        </form>
+                    </div>
+                    <!-- Manual Pane -->
+                    <div class="tab-pane fade" id="manual-rates-pane" role="tabpanel">
+                        <div class="card mb-3">
+                            <div class="card-body p-2 bg-light">
+                                <h6 class="card-title">Add Manual Rate</h6>
+                                <form id="addRateForm" onsubmit="event.preventDefault(); addManualRate();"
+                                    class="row g-2 align-items-center">
+                                    <div class="col-auto">
+                                        <input type="date" id="rateDate" class="form-control form-control-sm" required>
+                                    </div>
+                                    <div class="col-auto">
+                                        <select id="rateCurrency" class="form-select form-select-sm" required>
+                                            <option value="EUR">EUR</option>
+                                            <option value="USD">USD</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-auto">
+                                        <input type="number" step="0.0001" id="rateValue"
+                                            class="form-control form-control-sm" placeholder="Rate (CHF per 1)"
+                                            required>
+                                    </div>
+                                    <div class="col-auto">
+                                        <button type="submit" class="btn btn-success btn-sm">Add</button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                        <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+                            <table class="table table-sm table-striped">
+                                <thead>
+                                    <tr>
+                                        <th>Date</th>
+                                        <th>Currency</th>
+                                        <th>Rate (CHF)</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="ratesTableBody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Scripts for Rates -->
+<script>
+    function openRatesModal() {
+        new bootstrap.Modal(document.getElementById('manageRatesModal')).show();
+    }
+
+    function loadRates(page) {
+        fetch(`/cardwatch/bookkeeping/rates?page=${page}`)
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    const tbody = document.getElementById('ratesTableBody');
+                    tbody.innerHTML = '';
+                    data.rates.forEach(r => {
+                        const tr = document.createElement('tr');
+                        tr.innerHTML = `<td>${r.date}</td><td>${r.currency}</td><td>${r.rate}</td>`;
+                        tbody.appendChild(tr);
+                    });
+                }
+            });
+    }
+
+    function addManualRate() {
+        const date = document.getElementById('rateDate').value;
+        const currency = document.getElementById('rateCurrency').value;
+        const rate = document.getElementById('rateValue').value;
+
+        fetch('/cardwatch/bookkeeping/rates/add', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ date, currency, rate })
+        })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    loadRates(1);
+                    document.getElementById('addRateForm').reset();
+                    // Show toast or alert?
+                    // Switch to list tab
+                    document.getElementById('manual-tab').click();
+                } else {
+                    alert('Error: ' + data.error);
+                }
+            });
+    }
+
+    function handleRateUpload() {
+        const fileInput = document.getElementById('newRatesFile');
+        const file = fileInput.files[0];
+        if (!file) return;
+
+        const statusDiv = document.getElementById('newRatesStatus');
+        statusDiv.className = 'alert alert-info';
+        statusDiv.textContent = "Uploading...";
+        statusDiv.classList.remove('d-none');
+
+        const formData = new FormData();
+        formData.append('pdf_file', file);
+
+        fetch("{{ url_for('bookkeeping.upload_rates') }}", {
+            method: 'POST',
+            body: formData
+        })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    statusDiv.className = 'alert alert-success';
+                    statusDiv.textContent = `Success! Parsed ${data.count} rates. Recalculated ${data.recalculated} entries.`;
+                    setTimeout(() => {
+                        location.reload();
+                    }, 2000);
+                } else {
+                    statusDiv.className = 'alert alert-danger';
+                    statusDiv.textContent = "Error: " + data.error;
+                }
+            })
+            .catch(err => {
+                statusDiv.className = 'alert alert-danger';
+                statusDiv.textContent = "Request failed.";
+            });
+    }
+</script>
+
 <!-- Edit Entry Modal -->
 <div class="modal fade" id="editEntryModal" tabindex="-1">
     <div class="modal-dialog">
@@ -598,6 +780,7 @@
                             <select name="currency" id="editCurrency" class="form-select" required
                                 onchange="fetchRate('edit')">
                                 <option value="EUR">EUR</option>
+                                <option value="USD">USD</option>
                                 <option value="CHF">CHF</option>
                             </select>
                         </div>
@@ -817,7 +1000,7 @@
         // Amount depends on currency
         const eur = parseFloat(row.dataset.eur);
         const chf = parseFloat(row.dataset.chf);
-        document.getElementById('editAmount').value = (currency === 'EUR' ? eur : chf).toFixed(2);
+        document.getElementById('editAmount').value = (currency === 'CHF' ? chf : eur).toFixed(2);
 
         document.getElementById('editIsPrivate').checked = isPrivate;
         toggleEditMarketValue();
@@ -1276,6 +1459,29 @@
     </div>
 </div>
 
+<!-- Upload Ebay Invoice Modal -->
+<div class="modal fade" id="uploadEbayModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Upload Ebay Invoice (PDF)</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">Select PDF File</label>
+                    <input type="file" class="form-control" id="ebayFile" accept=".pdf">
+                </div>
+                <div id="uploadEbayError" class="alert alert-danger d-none"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" onclick="uploadEbay()">Upload & Analyze</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Confirm Invoice Modal -->
 <div class="modal fade" id="confirmInvoiceModal" tabindex="-1">
     <div class="modal-dialog modal-lg">
@@ -1295,29 +1501,7 @@
     </div>
 </div>
 
-<!-- Upload Rates Modal -->
-<div class="modal fade" id="uploadRatesModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">Upload Exchange Rates PDF</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <div class="mb-3">
-                    <label class="form-label">Select PDF File</label>
-                    <input type="file" class="form-control" id="ratesFile" accept=".pdf">
-                    <div class="form-text">Upload the monthly EUR/CHF rates PDF.</div>
-                </div>
-                <div id="ratesUploadStatus" class="alert alert-info d-none"></div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                <button type="button" class="btn btn-primary" onclick="uploadRates()">Upload</button>
-            </div>
-        </div>
-    </div>
-</div>
+
 
 <!-- Link / Distribute Modal -->
 <div class="modal fade" id="linkEntriesModal" tabindex="-1">
@@ -1410,6 +1594,37 @@
             });
     }
 
+    function uploadEbay() {
+        const fileInput = document.getElementById('ebayFile');
+        const file = fileInput.files[0];
+        if (!file) return;
+
+        const formData = new FormData();
+        formData.append('invoice_file', file);
+
+        fetch("{{ url_for('bookkeeping.upload_ebay') }}", {
+            method: 'POST',
+            body: formData
+        })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    parsedData = data.data;
+                    tempFilename = data.temp_filename;
+                    showConfirmation(parsedData);
+                    bootstrap.Modal.getInstance(document.getElementById('uploadEbayModal')).hide();
+                    new bootstrap.Modal(document.getElementById('confirmInvoiceModal')).show();
+                } else {
+                    document.getElementById('uploadEbayError').textContent = data.error;
+                    document.getElementById('uploadEbayError').classList.remove('d-none');
+                }
+            })
+            .catch(err => {
+                document.getElementById('uploadEbayError').textContent = 'Error uploading file.';
+                document.getElementById('uploadEbayError').classList.remove('d-none');
+            });
+    }
+
     function showConfirmation(data) {
         let html = `
             <div class="row mb-3">
@@ -1462,46 +1677,7 @@
             });
     }
 
-    function uploadRates() {
-        const fileInput = document.getElementById('ratesFile');
-        const file = fileInput.files[0];
-        if (!file) return;
 
-        const statusDiv = document.getElementById('ratesUploadStatus');
-        statusDiv.textContent = "Uploading...";
-        statusDiv.classList.remove('d-none', 'alert-danger', 'alert-success');
-        statusDiv.classList.add('alert-info');
-        statusDiv.classList.remove('d-none');
-
-        const formData = new FormData();
-        formData.append('pdf_file', file);
-
-        fetch("{{ url_for('bookkeeping.upload_rates') }}", {
-            method: 'POST',
-            body: formData
-        })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    statusDiv.textContent = `Success! Updated/Added ${data.count} rates.`;
-                    statusDiv.classList.remove('alert-info');
-                    statusDiv.classList.add('alert-success');
-                    setTimeout(() => {
-                        bootstrap.Modal.getOrCreateInstance(document.getElementById('uploadRatesModal')).hide();
-                        location.reload();
-                    }, 1500);
-                } else {
-                    statusDiv.textContent = "Error: " + data.error;
-                    statusDiv.classList.remove('alert-info');
-                    statusDiv.classList.add('alert-danger');
-                }
-            })
-            .catch(err => {
-                statusDiv.textContent = "Error uploading file.";
-                statusDiv.classList.remove('alert-info');
-                statusDiv.classList.add('alert-danger');
-            });
-    }
 
     // Linking Logic
     function openLinkModal() {

@@ -359,6 +359,6 @@ class BookkeepingAttachment(Base):
 class ExchangeRate(Base):
     __tablename__ = "exchange_rates"
     date = Column(Date, primary_key=True)
-    currency = Column(String, default="EUR")
+    currency = Column(String, primary_key=True, default="EUR")
     rate = Column(Float, nullable=False) # CHF per 1 Unit
 
