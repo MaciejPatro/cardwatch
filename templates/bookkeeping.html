@@ -1695,8 +1695,8 @@
     // Linking Logic
     function openLinkModal() {
         const checked = document.querySelectorAll('.entry-checkbox:checked');
-        if (checked.length < 2) {
-            alert("Please select at least 2 entries (1 Source, 1+ Targets).");
+        if (checked.length < 1) {
+            alert("Please select at least 1 entry (Source) to link.");
             return;
         }
 
@@ -1979,22 +1979,69 @@
 
                 if (data.success && data.entries.length > 0) {
                     data.entries.forEach(e => {
-                        const item = document.createElement('button');
-                        item.type = "button";
-                        item.className = "list-group-item list-group-item-action list-group-item-light small";
-                        item.innerHTML = `
-                            <div class="d-flex justify-content-between">
-                                <span><strong>${e.date}</strong> ${e.description}</span>
-                                <span>${e.amount_eur} ${e.currency}</span>
-                            </div>
-                        `;
-                        item.onclick = () => addExternalTarget(e);
+                        const item = document.createElement('div');
+                        item.className = "list-group-item list-group-item-action list-group-item-light small p-2";
+
+                        // Create buttons
+                        const btnGroup = document.createElement('div');
+                        btnGroup.className = "btn-group btn-group-sm float-end ms-2";
+
+                        const btnTarget = document.createElement('button');
+                        btnTarget.className = "btn btn-outline-secondary";
+                        btnTarget.textContent = "To Target";
+                        btnTarget.onclick = (ev) => { ev.stopPropagation(); addExternalTarget(e); };
+
+                        const btnSource = document.createElement('button');
+                        btnSource.className = "btn btn-outline-primary";
+                        btnSource.textContent = "To Source";
+                        btnSource.onclick = (ev) => { ev.stopPropagation(); addAsSource(e); };
+
+                        btnGroup.appendChild(btnTarget);
+                        btnGroup.appendChild(btnSource);
+
+                        const content = document.createElement('div');
+                        content.innerHTML = `<strong>${e.date}</strong> ${e.description} 
+                                           <span class="text-muted">(${e.amount_eur} ${e.currency})</span>`;
+
+                        item.appendChild(btnGroup);
+                        item.appendChild(content);
                         resultsDiv.appendChild(item);
                     });
                 } else {
                     resultsDiv.innerHTML = "<div class='p-2 text-muted small'>No results found.</div>";
                 }
             });
+    }
+
+    function addAsSource(entry) {
+        const sourceSelect = document.getElementById('linkSourceId');
+
+        // check if exists
+        let exists = false;
+        for (let i = 0; i < sourceSelect.options.length; i++) {
+            if (sourceSelect.options[i].value == entry.id) {
+                exists = true;
+                sourceSelect.selectedIndex = i;
+                break;
+            }
+        }
+
+        if (!exists) {
+            const opt = document.createElement('option');
+            opt.value = entry.id;
+            const amt = (entry.currency === 'CHF') ? entry.amount_chf : entry.amount_eur;
+            opt.text = `${entry.date} - ${entry.description} (${amt.toFixed(2)} ${entry.currency})`;
+            opt.dataset.amt = amt;
+            opt.dataset.currency = entry.currency;
+            sourceSelect.add(opt);
+            sourceSelect.value = entry.id;
+        }
+
+        // Hide search
+        document.getElementById('searchResults').style.display = 'none';
+
+        // Trigger update
+        onSourceChanged();
     }
 
     function addExternalTarget(entry) {
@@ -2010,17 +2057,19 @@
         const sourceCurrency = sourceSelect.options[sourceSelect.selectedIndex].dataset.currency || 'EUR';
 
         // Calculate default share (simple allocation logic)
-        // If we add a target, we just append it with 0 or a split?
-        // Let's create the element first.
-
         const container = document.getElementById('targetListContainer');
         const count = container.querySelectorAll('.input-group').length + 1;
-        const val = (sourceAmt / count).toFixed(2); // Naive redistribution? 
-        // User might want to specific input. Default to 0? Or split?
-        // If we recalc everything, we disturb existing inputs.
-        // Let's default to 0 and let user input, or just 10%?
-        // Let's use 0 for safety to not mess up others, or just not touch others?
-        // But recalcRemaining needs to work.
+
+        let val = 0.00;
+        const linkType = document.getElementById('linkType').value;
+
+        if (linkType === 'declaration_distribution') {
+            // 8.1% of target's value in source currency
+            const basis = (sourceCurrency === 'CHF') ? entry.amount_chf : entry.amount_eur;
+            val = basis * 0.081;
+        } else if (count === 1) {
+            val = sourceAmt;
+        }
 
         const div = document.createElement('div');
         div.className = "input-group mb-2";
@@ -2029,7 +2078,7 @@
                  ${entry.date} - ${entry.description} (Ext)
             </span>
             <input type="number" step="0.01" class="form-control target-allocation" 
-                value="0.00" 
+                value="${val.toFixed(2)}" 
                 data-id="${entry.id}"
                 oninput="recalcRemaining()">
             <span class="input-group-text">${sourceCurrency}</span>
