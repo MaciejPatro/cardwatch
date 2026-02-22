@@ -6,9 +6,10 @@ from sqlalchemy.orm import sessionmaker
 from db import Base, Product, Daily, Price
 from scraper import is_heads_up
 
+
 class HeadsUpTest(unittest.TestCase):
     def setUp(self):
-        engine = create_engine('sqlite:///:memory:', future=True)
+        engine = create_engine("sqlite:///:memory:", future=True)
         Base.metadata.create_all(engine)
         self.Session = sessionmaker(bind=engine, future=True)
 
@@ -16,7 +17,7 @@ class HeadsUpTest(unittest.TestCase):
         s = self.Session()
         try:
             # product needed for foreign keys
-            s.add(Product(id=1, name='p', url='u', country='c'))
+            s.add(Product(id=1, name="p", url="u", country="c"))
             today = date.today()
             # create 10 days of daily rows: recent 7 with avg=100, earlier 3 with avg=200
             for i in range(10):
@@ -33,5 +34,6 @@ class HeadsUpTest(unittest.TestCase):
         finally:
             s.close()
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     unittest.main()

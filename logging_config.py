@@ -2,15 +2,14 @@ import logging
 from logging.handlers import RotatingFileHandler
 import os
 
+
 def configure_logging(app):
     if not app.debug:
-        if not os.path.exists('logs'):
-            os.mkdir('logs')
-        formatter = logging.Formatter(
-            '%(asctime)s %(levelname)s: %(message)s [in %(pathname)s:%(lineno)d]'
-        )
+        if not os.path.exists("logs"):
+            os.mkdir("logs")
+        formatter = logging.Formatter("%(asctime)s %(levelname)s: %(message)s [in %(pathname)s:%(lineno)d]")
 
-        file_handler = RotatingFileHandler('logs/cardwatch.log', maxBytes=10240, backupCount=10)
+        file_handler = RotatingFileHandler("logs/cardwatch.log", maxBytes=10240, backupCount=10)
         file_handler.setFormatter(formatter)
         file_handler.setLevel(logging.INFO)
 
@@ -23,6 +22,6 @@ def configure_logging(app):
         root_logger.addHandler(file_handler)
         root_logger.addHandler(stream_handler)
 
-        logging.info('CardWatch startup')
+        logging.info("CardWatch startup")
     else:
         logging.basicConfig(level=logging.DEBUG)

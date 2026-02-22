@@ -4,13 +4,13 @@ from scraper import parse_supply
 
 
 def test_parse_supply_basic():
-    html = '''<div class="info">
+    html = """<div class="info">
     <dt class="col-6">Available items</dt>
     <dd class="col-6">42</dd>
-    </div>'''
+    </div>"""
     assert parse_supply(html) == 42
 
 
 def test_parse_supply_not_found_returns_none():
-    html = '<div>nothing here</div>'
+    html = "<div>nothing here</div>"
     assert parse_supply(html) is None

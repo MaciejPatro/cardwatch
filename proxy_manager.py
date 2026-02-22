@@ -4,6 +4,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 class ProxyManager:
     def __init__(self, proxy_file="proxies.txt"):
         self.proxy_file = proxy_file
@@ -14,17 +15,17 @@ class ProxyManager:
     def load_proxies(self):
         if not os.path.exists(self.proxy_file):
             return
-        
+
         with open(self.proxy_file, "r") as f:
             lines = f.readlines()
-        
+
         valid_proxies = []
         for line in lines:
             line = line.strip()
             if not line or line.startswith("#"):
                 continue
             valid_proxies.append(self._parse_proxy(line))
-        
+
         self.proxies = valid_proxies
         # Shuffle to start random
         if self.proxies:
@@ -33,7 +34,7 @@ class ProxyManager:
     def _parse_proxy(self, proxy_str):
         # Allow format: ip:port or ip:port:user:pass
         # Playwright expects: { "server": "...", "username": "...", "password": "..." }
-        
+
         if "://" in proxy_str:
             # Assume it's a full URL, return directly as server
             return {"server": proxy_str}
@@ -42,19 +43,15 @@ class ProxyManager:
         if len(parts) == 2:
             return {"server": f"http://{parts[0]}:{parts[1]}"}
         elif len(parts) == 4:
-            return {
-                "server": f"http://{parts[0]}:{parts[1]}",
-                "username": parts[2],
-                "password": parts[3]
-            }
-        
+            return {"server": f"http://{parts[0]}:{parts[1]}", "username": parts[2], "password": parts[3]}
+
         # Fallback
         return {"server": proxy_str}
 
     def get_next_proxy(self):
         if not self.proxies:
             return None
-        
+
         proxy = self.proxies[self.current_index]
         self.current_index = (self.current_index + 1) % len(self.proxies)
         return proxy

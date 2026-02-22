@@ -60,4 +60,3 @@ def test_delete_removes_item_and_shows_in_edit():
         assert session.get(db.Item, item_id) is None
     finally:
         session.close()
-

@@ -53,4 +53,3 @@ def test_uploads_use_unique_filenames(tmp_path, monkeypatch):
     assert items[0].image != items[1].image
     assert (tmp_path / items[0].image).exists()
     assert (tmp_path / items[1].image).exists()
-

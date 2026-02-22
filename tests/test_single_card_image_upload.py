@@ -33,9 +33,7 @@ def test_single_card_upload_uses_unique_filename(tmp_path, monkeypatch):
         "image": (io.BytesIO(b"a"), "photo.jpg"),
     }
 
-    resp1 = client.post(
-        "/cardwatch/singles/add", data=data1, content_type="multipart/form-data"
-    )
+    resp1 = client.post("/cardwatch/singles/add", data=data1, content_type="multipart/form-data")
     assert resp1.status_code == 302
 
     data2 = {
@@ -45,9 +43,7 @@ def test_single_card_upload_uses_unique_filename(tmp_path, monkeypatch):
         "image": (io.BytesIO(b"b"), "photo.jpg"),
     }
 
-    resp2 = client.post(
-        "/cardwatch/singles/add", data=data2, content_type="multipart/form-data"
-    )
+    resp2 = client.post("/cardwatch/singles/add", data=data2, content_type="multipart/form-data")
     assert resp2.status_code == 302
 
     s = db.SessionLocal()

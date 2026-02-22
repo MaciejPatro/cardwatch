@@ -22,14 +22,16 @@ PRICE_GUIDE_URL = "https://downloads.s3.cardmarket.com/productCatalog/priceGuide
 DEFAULT_FILENAME = "price_guide_22.json"
 IMAGE_DIR = os.path.join(Config.MEDIA_ROOT, "single_card_images")
 
+
 def download_file(url, filename):
     print(f"Downloading {url} to {filename}...")
     with requests.get(url, stream=True) as r:
         r.raise_for_status()
-        with open(filename, 'wb') as f:
+        with open(filename, "wb") as f:
             for chunk in r.iter_content(chunk_size=8192):
                 f.write(chunk)
     print("Download complete.")
+
 
 async def get_card_details(context, product_id, check_url_callback=None, delay=2.0):
     """
@@ -39,13 +41,13 @@ async def get_card_details(context, product_id, check_url_callback=None, delay=2
     # Assumption: Game name in URL is 'Riftbound'. If this fails, user might need to correct it.
     url = f"https://www.cardmarket.com/en/Riftbound/Products?idProduct={product_id}"
     print(f"Scraping {url}...")
-    
+
     await asyncio.sleep(delay)
-    
+
     page = await context.new_page()
     try:
         await page.goto(url, wait_until="domcontentloaded", timeout=60000)
-        
+
         # Check for blocking
         title = await page.title()
         if title == "www.cardmarket.com" or "Just a moment" in title:
@@ -53,13 +55,13 @@ async def get_card_details(context, product_id, check_url_callback=None, delay=2
             update_scraper_status("error", "Import script was blocked by Cloudflare. Cookies need update.")
         else:
             if "Cardmarket" in title and title != "www.cardmarket.com":
-                 update_scraper_status("ok", "Import script running normally.")
-        
+                update_scraper_status("ok", "Import script running normally.")
+
         final_url = clean_url(page.url)
         if "Starter-Deck" in final_url or "Structure-Deck" in final_url:
-             print(f"Skipping (Starter Deck URL): {final_url}")
-             await page.close()
-             return None
+            print(f"Skipping (Starter Deck URL): {final_url}")
+            await page.close()
+            return None
 
         # Optimization: Check if this final URL already exists in DB
         if check_url_callback and check_url_callback(final_url):
@@ -73,10 +75,10 @@ async def get_card_details(context, product_id, check_url_callback=None, delay=2
         await page.close()
         return None
 
-    soup = BeautifulSoup(content, 'html.parser')
-    
+    soup = BeautifulSoup(content, "html.parser")
+
     # 1. Extract Name
-    h1 = soup.find('h1')
+    h1 = soup.find("h1")
     if not h1:
         # Fallback: Check page title maybe?
         print(f"Could not find H1 title. Page Title: {await page.title()}")
@@ -85,8 +87,8 @@ async def get_card_details(context, product_id, check_url_callback=None, delay=2
             f.write(content)
         await page.close()
         return None
-    
-    for span in h1.find_all('span'):
+
+    for span in h1.find_all("span"):
         span.decompose()
     card_name = h1.get_text(strip=True)
 
@@ -96,31 +98,31 @@ async def get_card_details(context, product_id, check_url_callback=None, delay=2
         return None
 
     # 2. Extract Image URL
-    img_tag = soup.select_one('div.tab-content img')
+    img_tag = soup.select_one("div.tab-content img")
     if not img_tag:
-        img_tag = soup.select_one('div.image img')
-    
+        img_tag = soup.select_one("div.image img")
+
     image_url = None
     if img_tag:
-        src = img_tag.get('src')
+        src = img_tag.get("src")
         if src:
-            if src.startswith('//'):
-                image_url = 'https:' + src
-            elif src.startswith('/'):
-                image_url = 'https://www.cardmarket.com' + src
+            if src.startswith("//"):
+                image_url = "https:" + src
+            elif src.startswith("/"):
+                image_url = "https://www.cardmarket.com" + src
             else:
                 image_url = src
-    
+
     if not image_url:
         print("Could not find image URL.")
         await page.screenshot(path="debug_image_error.png")
         with open("debug_image_error.html", "w") as f:
-             f.write(content)
-    
+            f.write(content)
+
     # 3. Detect Language
-    language = "English" 
+    language = "English"
     current_url = page.url
-    if "(Japanese)" in card_name or "(Jer)" in card_name or "(Non-English)" in card_name: 
+    if "(Japanese)" in card_name or "(Jer)" in card_name or "(Non-English)" in card_name:
         language = "Japanese"
     elif "(Chinese)" in card_name:
         language = "Chinese"
@@ -128,7 +130,7 @@ async def get_card_details(context, product_id, check_url_callback=None, delay=2
         language = "Japanese"
     elif "Asia" in card_name or "Asian" in card_name:
         language = "Japanese"
-    
+
     # Download Image Content
     image_content = None
     if image_url:
@@ -142,7 +144,7 @@ async def get_card_details(context, product_id, check_url_callback=None, delay=2
                 print(f"Failed to download image: {response.status} {response.status_text}")
 
         except Exception as e:
-             print(f"Error downloading image: {e}")
+            print(f"Error downloading image: {e}")
 
     await page.close()
 
@@ -151,17 +153,19 @@ async def get_card_details(context, product_id, check_url_callback=None, delay=2
         "image_url": image_url,
         "language": language,
         "image_content": image_content,
-        "product_url": final_url
+        "product_url": final_url,
     }
+
 
 def save_image(content, filename):
     os.makedirs(IMAGE_DIR, exist_ok=True)
-    ext = ".jpg" 
+    ext = ".jpg"
     unique_name = f"{uuid.uuid4().hex}_{filename}{ext}"
     path = os.path.join(IMAGE_DIR, unique_name)
-    with open(path, 'wb') as f:
+    with open(path, "wb") as f:
         f.write(content)
     return unique_name
+
 
 async def run_import():
     parser = argparse.ArgumentParser(description="Import Riftbound Singles")
@@ -178,34 +182,34 @@ async def run_import():
     # 1. Load Data
     # Always download the latest price guide
     download_file(args.url, args.file)
-    
+
     print("Waiting 10 seconds before processing...")
     time.sleep(10)
-    
+
     print(f"Loading {args.file}...")
-    with open(args.file, 'r', encoding='utf-8') as f:
+    with open(args.file, "r", encoding="utf-8") as f:
         data = json.load(f)
-    
+
     price_guides = data.get("priceGuides", [])
     print(f"Found {len(price_guides)} items in price guide.")
 
     new_cards_processed = 0
     query_count = 0
-    
+
     print("Starting Playwright (Chromium)...")
-    
+
     async with async_playwright() as p:
         browser = await p.firefox.launch(headless=True)
         context = await browser.new_context(
             user_agent="Mozilla/5.0 (X11; Linux x86_64; rv:147.0) Gecko/20100101 Firefox/147.0",
-            extra_http_headers={"Referer": "https://www.cardmarket.com/"}
+            extra_http_headers={"Referer": "https://www.cardmarket.com/"},
         )
         try:
             cookies = parse_netscape_cookies("cookies-cardmarket-com.txt")
             await context.add_cookies(cookies)
         except Exception as e:
             print(f"Failed to load cookies: {e}")
-        
+
         with get_db_session() as session:
             for item in price_guides:
                 if args.limit and new_cards_processed >= args.limit:
@@ -213,10 +217,10 @@ async def run_import():
                     break
 
                 product_id = item.get("idProduct")
-                trend_price = item.get("trend") 
+                trend_price = item.get("trend")
                 avg30_price = item.get("avg30")
                 avg7_price = item.get("avg7")
-                
+
                 # 4. Filtering
                 # Prioritize long-term averages for stability
                 if avg30_price is not None:
@@ -228,10 +232,9 @@ async def run_import():
                 else:
                     filter_price = trend_price
                     price_type = "Trend"
-                
+
                 if filter_price is None or filter_price < args.min_price:
                     continue
-
 
                 # Check Blocklist
                 if is_blocked(product_id=product_id):
@@ -243,7 +246,7 @@ async def run_import():
                 if is_blocked(url=expected_url):
                     print(f"Skipping (Blocked URL): {expected_url}")
                     continue
-                
+
                 # 5. Check Duplicates (Product ID & URL)
                 # First check by product_id (fastest, no scraping needed)
                 existing_by_id = session.query(SingleCard).filter_by(product_id=product_id).first()
@@ -268,7 +271,7 @@ async def run_import():
                         print(f"Limit of 10 queries reached (Count: {query_count}). Pausing for 90 seconds...")
                         time.sleep(90)
                     continue
-                
+
                 # 6. New Card
                 print(f"[NEW MATCH] ID: {product_id} | {price_type} Price: {filter_price}")
 
@@ -276,7 +279,7 @@ async def run_import():
                 if query_count > 0 and query_count % 10 == 0:
                     print(f"Limit of 10 queries reached (Count: {query_count}). Pausing for 90 seconds...")
                     time.sleep(90)
-                
+
                 if args.dry_run:
                     # Even in dry run, we might want to test one scrape to verify context?
                     # But typically dry-run avoids network calls if possible, or limited.
@@ -293,14 +296,16 @@ async def run_import():
                         if existing_canonical:
                             # Update product_id if we found it by URL but ID was missing
                             if not existing_canonical.product_id:
-                                 print(f"Updating product_id for {existing_canonical.name} to {product_id}")
-                                 existing_canonical.product_id = product_id
-                                 session.commit()
+                                print(f"Updating product_id for {existing_canonical.name} to {product_id}")
+                                existing_canonical.product_id = product_id
+                                session.commit()
                             return True
                     return False
 
-                details = await get_card_details(context, product_id, check_url_callback=check_url_callback, delay=args.delay)
-                
+                details = await get_card_details(
+                    context, product_id, check_url_callback=check_url_callback, delay=args.delay
+                )
+
                 if not details:
                     print("Skipping due to scrape failure.")
                     continue
@@ -311,11 +316,11 @@ async def run_import():
                     if existing_canonical:
                         print(f"Skipping (Already exists as migrated URL): {details['name']}")
                         if not existing_canonical.product_id:
-                             print(f"Updating product_id for {existing_canonical.name} to {product_id}")
-                             existing_canonical.product_id = product_id
-                             session.commit()
+                            print(f"Updating product_id for {existing_canonical.name} to {product_id}")
+                            existing_canonical.product_id = product_id
+                            session.commit()
                         continue
-                
+
                 if args.dry_run:
                     print(f"[DRY RUN] Would add: {details['name']}")
                     new_cards_processed += 1
@@ -325,14 +330,14 @@ async def run_import():
                 saved_image_path = None
                 if details["image_content"]:
                     saved_image_path = save_image(details["image_content"], str(product_id))
-                
+
                 # Auto-Assign Category
                 category = None
                 if "Booster Box" in details["name"]:
                     category = "Booster Box"
                 elif "Pack" in details["name"]:
                     category = "Pack"
-                
+
                 # Create DB Record
                 new_card = SingleCard(
                     name=details["name"],
@@ -342,21 +347,23 @@ async def run_import():
                     image_url=None,
                     category=category,
                     game="Riftbound",
-                    product_id=product_id
+                    product_id=product_id,
                 )
                 if saved_image_path:
-                     new_card.image_url = os.path.join("single_card_images", saved_image_path)
+                    new_card.image_url = os.path.join("single_card_images", saved_image_path)
 
                 session.add(new_card)
                 session.commit()
                 print(f"Added {new_card.name} to database.")
                 new_cards_processed += 1
-        
+
         await context.close()
         await browser.close()
 
+
 def main():
     asyncio.run(run_import())
+
 
 if __name__ == "__main__":
     main()

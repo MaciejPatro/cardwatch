@@ -5,7 +5,7 @@ After=network.target
 [Service]
 User=mpatro
 WorkingDirectory=/home/mpatro/projects/cardwatch
-ExecStart=/home/mpatro/projects/cardwatch/.venv/bin/python app.py
+ExecStart=/home/mpatro/.local/bin/uv run app.py
 Restart=always
 Environment=PYTHONUNBUFFERED=1
 

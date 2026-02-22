@@ -17,7 +17,6 @@ from db import (
     SingleCardDaily,
     PSA10Price,
     PSA10Offer,
-
     Item,
 )
 from scraper import (
@@ -42,9 +41,8 @@ app.config.from_object(Config)
 
 
 configure_logging(app)
-SINGLE_CARD_UPLOAD_FOLDER = os.path.join(app.config['MEDIA_ROOT'], "single_card_images")
+SINGLE_CARD_UPLOAD_FOLDER = os.path.join(app.config["MEDIA_ROOT"], "single_card_images")
 os.makedirs(SINGLE_CARD_UPLOAD_FOLDER, exist_ok=True)
-
 
 
 init_db()
@@ -56,14 +54,15 @@ if not app.config.get("CARDWATCH_DISABLE_SCHEDULER") and (
 
 app.register_blueprint(tracker_bp)
 from routes_bookkeeping import bookkeeping_bp
+
 app.register_blueprint(bookkeeping_bp)
 tracker_scheduler = init_tracker_scheduler()
-
 
 
 @app.route("/cardwatch/psa10")
 def psa10_list():
     return render_template("psa10_list.html")
+
 
 @app.route("/cardwatch/psa10/<int:cid>")
 def psa10_details(cid):
@@ -71,19 +70,17 @@ def psa10_details(cid):
         card = session.get(SingleCard, cid)
         if not card:
             return "Card not found", 404
-        
+
         # Get offers
         offers = session.query(PSA10Offer).filter_by(card_id=cid).order_by(PSA10Offer.price).all()
-        
+
         # Get history for chart
         history = session.query(PSA10Price).filter_by(card_id=cid).order_by(PSA10Price.ts).all()
-        
-        chart_data = {
-            "labels": [h.ts.strftime("%Y-%m-%d") for h in history],
-            "data": [h.low for h in history]
-        }
-        
+
+        chart_data = {"labels": [h.ts.strftime("%Y-%m-%d") for h in history], "data": [h.low for h in history]}
+
     return render_template("psa10_details.html", card=card, offers=offers, chart_data=chart_data)
+
 
 @app.route("/api/psa10")
 def api_psa10_data():
@@ -95,7 +92,7 @@ def api_psa10_data():
     language = request.args.get("language", "All")
 
     with get_db_session() as session:
-        query = session.query(SingleCard).filter(SingleCard.category == 'Liked')
+        query = session.query(SingleCard).filter(SingleCard.category == "Liked")
 
         if search:
             query = query.filter(SingleCard.name.ilike(f"%{search}%"))
@@ -104,21 +101,25 @@ def api_psa10_data():
             query = query.filter(SingleCard.language == language)
 
         total = query.count()
-        cards = query.all() # Fetch all to manual sort/filter since joins are complex with aggregations
-        
+        cards = query.all()  # Fetch all to manual sort/filter since joins are complex with aggregations
+
         # Manual processing to get latest prices
         data = []
         for c in cards:
             # Latest PSA10
             psa10_entry = session.query(PSA10Price).filter_by(card_id=c.id).order_by(PSA10Price.ts.desc()).first()
             psa10_low = psa10_entry.low if psa10_entry else None
-            
+
             # Latest Raw
-            raw_entry = session.query(SingleCardPrice).filter_by(card_id=c.id).order_by(SingleCardPrice.ts.desc()).first()
+            raw_entry = (
+                session.query(SingleCardPrice).filter_by(card_id=c.id).order_by(SingleCardPrice.ts.desc()).first()
+            )
             raw_low = raw_entry.low if raw_entry else None
-            
+
             # PSA10 History (sparkline)
-            history = session.query(PSA10Price.low).filter_by(card_id=c.id).order_by(PSA10Price.ts.desc()).limit(30).all()
+            history = (
+                session.query(PSA10Price.low).filter_by(card_id=c.id).order_by(PSA10Price.ts.desc()).limit(30).all()
+            )
             sparkline = [h[0] for h in history][::-1] if history else []
 
             # Calculate Ratio
@@ -126,19 +127,22 @@ def api_psa10_data():
             if psa10_low and raw_low and raw_low > 0:
                 ratio = psa10_low / raw_low
 
-            data.append({
-                "id": c.id,
-                "name": c.name,
-                "image_url": c.image_url,
-                "psa10_low": psa10_low,
-                "raw_low": raw_low,
-                "ratio": ratio,
-                "psa10_history": sparkline,
-                "url": c.url
-            })
-            
+            data.append(
+                {
+                    "id": c.id,
+                    "name": c.name,
+                    "image_url": c.image_url,
+                    "psa10_low": psa10_low,
+                    "raw_low": raw_low,
+                    "ratio": ratio,
+                    "psa10_history": sparkline,
+                    "url": c.url,
+                }
+            )
+
         # Sorting
-        reverse = (order == "desc")
+        reverse = order == "desc"
+
         def sort_key(x):
             val = x.get(sort)
             if val is None:
@@ -146,7 +150,7 @@ def api_psa10_data():
             return val
 
         data.sort(key=sort_key, reverse=reverse)
-        
+
         # Pagination
         sliced = data[offset : offset + limit]
 
@@ -170,6 +174,7 @@ def inject_scraper_status():
             pass
     return dict(scraper_status=status_data)
 
+
 @app.route("/cardwatch")
 @app.route("/cardwatch/")
 def index():
@@ -182,25 +187,20 @@ def index():
             heads, now_low, avg7 = is_heads_up(s, p.id)
 
             # current (latest) and first (oldest) recorded prices
-            latest = (s.query(Price)
-                      .filter_by(product_id=p.id)
-                      .order_by(Price.ts.desc())
-                      .first())
-            first  = (s.query(Price)
-                      .filter_by(product_id=p.id)
-                      .order_by(Price.ts.asc())
-                      .first())
+            latest = s.query(Price).filter_by(product_id=p.id).order_by(Price.ts.desc()).first()
+            first = s.query(Price).filter_by(product_id=p.id).order_by(Price.ts.asc()).first()
 
             # past prices for percent changes
             def get_past(delta):
-                return (s.query(Price)
-                        .filter(Price.product_id == p.id,
-                                Price.ts <= now - delta)
-                        .order_by(Price.ts.desc())
-                        .first())
+                return (
+                    s.query(Price)
+                    .filter(Price.product_id == p.id, Price.ts <= now - delta)
+                    .order_by(Price.ts.desc())
+                    .first()
+                )
 
             past24 = get_past(timedelta(hours=24))
-            past7  = get_past(timedelta(days=7))
+            past7 = get_past(timedelta(days=7))
             past30 = get_past(timedelta(days=30))
 
             def pct(cur, prev):
@@ -210,38 +210,31 @@ def index():
 
             current_low = latest.low if latest else None
 
-            model.append({
-                "id": p.id,
-                "name": p.name,
-                "country": p.country,
-                "url": p.url,
-                "enabled": bool(p.is_enabled),
-
-                "trend": trend,
-                "heads": heads,
-                "avg7": avg7,
-
-                "current_low": current_low,
-                "first_low": first.low if first else None,
-                "pct24": pct(current_low, past24.low if past24 else None),
-                "pct7":  pct(current_low, past7.low if past7 else None),
-                "pct30": pct(current_low, past30.low if past30 else None),
-                "supply": latest.supply if latest else None,
-
-                "last_ts": latest.ts.strftime("%Y-%m-%d %H:%M") if latest else None,
-            })
+            model.append(
+                {
+                    "id": p.id,
+                    "name": p.name,
+                    "country": p.country,
+                    "url": p.url,
+                    "enabled": bool(p.is_enabled),
+                    "trend": trend,
+                    "heads": heads,
+                    "avg7": avg7,
+                    "current_low": current_low,
+                    "first_low": first.low if first else None,
+                    "pct24": pct(current_low, past24.low if past24 else None),
+                    "pct7": pct(current_low, past7.low if past7 else None),
+                    "pct30": pct(current_low, past30.low if past30 else None),
+                    "supply": latest.supply if latest else None,
+                    "last_ts": latest.ts.strftime("%Y-%m-%d %H:%M") if latest else None,
+                }
+            )
         return render_template("index.html", products=model)
-
 
 
 def calculate_card_stats(session, card):
     now = datetime.utcnow()
-    latest = (
-        session.query(SingleCardPrice)
-        .filter_by(card_id=card.id)
-        .order_by(SingleCardPrice.ts.desc())
-        .first()
-    )
+    latest = session.query(SingleCardPrice).filter_by(card_id=card.id).order_by(SingleCardPrice.ts.desc()).first()
     first = (
         session.query(SingleCardPrice)
         .filter_by(card_id=card.id)
@@ -279,7 +272,7 @@ def calculate_card_stats(session, card):
     if current_supply is not None and past7 and past7.supply:
         if current_supply < past7.supply * 0.9:
             supply_drop = True
-    
+
     price_outlier = False
     if current_low is not None and avg5:
         if current_low < avg5 * 0.7:
@@ -298,12 +291,12 @@ def calculate_card_stats(session, card):
     # Basic downsampling if too many points (simple skip)
     # Basic downsampling if too many points (simple skip)
     history_values = [r.low for r in history_query]
-    
+
     # Sentiment Badge Logic
     trend = compute_single_trend(session, card.id)
     sentiment_badge = "Stagnant"
     supply_trend_up = False
-    
+
     # Check simple supply trend (current vs 7 days ago approx)
     if current_supply is not None and past7 and past7.supply:
         if current_supply > past7.supply * 1.05:
@@ -352,11 +345,11 @@ def singles():
 def deals():
     # Parse filter params
     is_submitted = request.args.get("submitted") == "true"
-    
+
     # Pagination
     page = int(request.args.get("page", 1))
     per_page = 20
-    
+
     if is_submitted:
         show_promos = request.args.get("promos") == "true"
         show_packs = request.args.get("packs") == "true"
@@ -367,42 +360,45 @@ def deals():
         show_promos = False
         show_packs = False
         language = "English"
-    
+
     with get_db_session() as s:
         # Get ALL matching deals (sorted)
         all_deals = calculate_deals(s, include_promos=show_promos, language=language, include_packs=show_packs)
-    
+
     # Pagination Logic
     total_deals = len(all_deals)
     total_pages = (total_deals + per_page - 1) // per_page
-    
+
     # Slice
     start = (page - 1) * per_page
     end = start + per_page
     paginated_deals = all_deals[start:end]
-    
-    return render_template("deals.html", 
-                           deals=paginated_deals, 
-                           show_promos=show_promos, 
-                           language=language, 
-                           show_packs=show_packs,
-                           page=page,
-                           total_pages=total_pages)
+
+    return render_template(
+        "deals.html",
+        deals=paginated_deals,
+        show_promos=show_promos,
+        language=language,
+        show_packs=show_packs,
+        page=page,
+        total_pages=total_pages,
+    )
+
 
 @app.route("/cardwatch/single/<int:cid>/category", methods=["POST"])
 def update_single_category(cid):
-     data = request.json
-     new_category = data.get("category")
-     # Allow empty string to clear category
-     
-     with get_db_session() as s:
-         card = s.get(SingleCard, cid)
-         if not card:
-             return jsonify({"success": False, "error": "Not found"}), 404
-         
-         card.category = new_category
-         s.commit()
-         return jsonify({"success": True})
+    data = request.json
+    new_category = data.get("category")
+    # Allow empty string to clear category
+
+    with get_db_session() as s:
+        card = s.get(SingleCard, cid)
+        if not card:
+            return jsonify({"success": False, "error": "Not found"}), 404
+
+        card.category = new_category
+        s.commit()
+        return jsonify({"success": True})
 
 
 @app.route("/cardwatch/singles/delete/<int:cid>", methods=["POST"])
@@ -411,18 +407,18 @@ def delete_single(cid):
         card = s.get(SingleCard, cid)
         if not card:
             return jsonify({"success": False, "error": "Not found"}), 404
-        
+
         # Delete image if exists
         if card.image_url:
-             # Handle both full absolute path and relative path cases if needed
-             # Logic in save_uploaded_image returns relative path from MEDIA_ROOT
-             try:
-                 # Check if it's a local file relative to MEDIA_ROOT
-                 full_path = os.path.join(app.config['MEDIA_ROOT'], card.image_url)
-                 if os.path.exists(full_path):
-                     os.remove(full_path)
-             except OSError as e:
-                 print(f"Error deleting image {full_path}: {e}")
+            # Handle both full absolute path and relative path cases if needed
+            # Logic in save_uploaded_image returns relative path from MEDIA_ROOT
+            try:
+                # Check if it's a local file relative to MEDIA_ROOT
+                full_path = os.path.join(app.config["MEDIA_ROOT"], card.image_url)
+                if os.path.exists(full_path):
+                    os.remove(full_path)
+            except OSError as e:
+                print(f"Error deleting image {full_path}: {e}")
 
         s.delete(card)
         s.commit()
@@ -434,7 +430,8 @@ def api_singles_sets():
     with get_db_session() as s:
         # Get distinct sets, exclude None
         sets = [
-            r[0] for r in s.query(SingleCard.set_name)
+            r[0]
+            for r in s.query(SingleCard.set_name)
             .distinct()
             .filter(SingleCard.set_name.isnot(None))
             .order_by(SingleCard.set_name)
@@ -463,7 +460,7 @@ def api_singles_list():
         # Search
         if search:
             query = query.filter(SingleCard.name.ilike(f"%{search}%"))
-        
+
         # Game Filter
         if game_filter and game_filter != "All":
             query = query.filter(SingleCard.game == game_filter)
@@ -478,34 +475,34 @@ def api_singles_list():
 
         # Category Filter
         if category_filter:
-            if category_filter == "None": # Special case for filtering empty categories
-                 query = query.filter((SingleCard.category == None) | (SingleCard.category == ""))
+            if category_filter == "None":  # Special case for filtering empty categories
+                query = query.filter((SingleCard.category == None) | (SingleCard.category == ""))
             else:
-                 query = query.filter(SingleCard.category == category_filter)
+                query = query.filter(SingleCard.category == category_filter)
         else:
             # Default: Exclude "Ignore" category cards only when no specific category is selected
             # logic: "All Categories" means "All visible categories" (not ignored ones)
-            query = query.filter((SingleCard.category != 'Ignore') | (SingleCard.category.is_(None)))
-        
+            query = query.filter((SingleCard.category != "Ignore") | (SingleCard.category.is_(None)))
+
         # Price Filtering Subquery
         from sqlalchemy import text
-        
+
         # Price Subquery for filtering/sorting
         # Re-using the logic from sorting to get the latest price/supply
         # Creating a reusable subquery factory or just defining it cleanly here
-        
+
         if min_price is not None or max_price is not None:
-             price_subq = (
-                 s.query(SingleCardPrice.low)
-                 .filter(SingleCardPrice.card_id == SingleCard.id)
-                 .order_by(SingleCardPrice.ts.desc())
-                 .limit(1)
-                 .scalar_subquery()
-             )
-             if min_price is not None:
-                 query = query.filter(price_subq >= min_price)
-             if max_price is not None:
-                 query = query.filter(price_subq <= max_price)
+            price_subq = (
+                s.query(SingleCardPrice.low)
+                .filter(SingleCardPrice.card_id == SingleCard.id)
+                .order_by(SingleCardPrice.ts.desc())
+                .limit(1)
+                .scalar_subquery()
+            )
+            if min_price is not None:
+                query = query.filter(price_subq >= min_price)
+            if max_price is not None:
+                query = query.filter(price_subq <= max_price)
 
         # Sorting
         if sort_field == "name":
@@ -515,47 +512,47 @@ def api_singles_list():
             col = SingleCard.language
             query = query.order_by(col.asc() if sort_order == "asc" else col.desc())
         elif sort_field == "current":
-             subq = (
-                 s.query(SingleCardPrice.low)
-                 .filter(SingleCardPrice.card_id == SingleCard.id)
-                 .order_by(SingleCardPrice.ts.desc())
-                 .limit(1)
-                 .scalar_subquery()
-             )
-             query = query.order_by(subq.asc() if sort_order == "asc" else subq.desc())
+            subq = (
+                s.query(SingleCardPrice.low)
+                .filter(SingleCardPrice.card_id == SingleCard.id)
+                .order_by(SingleCardPrice.ts.desc())
+                .limit(1)
+                .scalar_subquery()
+            )
+            query = query.order_by(subq.asc() if sort_order == "asc" else subq.desc())
         elif sort_field == "supply":
-             subq = (
-                 s.query(SingleCardPrice.supply)
-                 .filter(SingleCardPrice.card_id == SingleCard.id)
-                 .order_by(SingleCardPrice.ts.desc())
-                 .limit(1)
-                 .scalar_subquery()
-             )
-             query = query.order_by(subq.asc() if sort_order == "asc" else subq.desc())
+            subq = (
+                s.query(SingleCardPrice.supply)
+                .filter(SingleCardPrice.card_id == SingleCard.id)
+                .order_by(SingleCardPrice.ts.desc())
+                .limit(1)
+                .scalar_subquery()
+            )
+            query = query.order_by(subq.asc() if sort_order == "asc" else subq.desc())
         elif sort_field == "pct_all":
-             # Subquery for current price (latest)
-             current_subq = (
-                 s.query(SingleCardPrice.low)
-                 .filter(SingleCardPrice.card_id == SingleCard.id)
-                 .order_by(SingleCardPrice.ts.desc())
-                 .limit(1)
-                 .scalar_subquery()
-             )
-             # Subquery for first price (oldest with non-null low)
-             first_subq = (
-                 s.query(SingleCardPrice.low)
-                 .filter(SingleCardPrice.card_id == SingleCard.id)
-                 .filter(SingleCardPrice.low.isnot(None))
-                 .order_by(SingleCardPrice.ts.asc())
-                 .limit(1)
-                 .scalar_subquery()
-             )
-             
-             # (current - first) / first
-             # Handle division by zero or nulls gracefully if needed, though SQL comparison rules might handle nulls
-             diff = (current_subq - first_subq) / first_subq
-             
-             query = query.order_by(diff.asc() if sort_order == "asc" else diff.desc())
+            # Subquery for current price (latest)
+            current_subq = (
+                s.query(SingleCardPrice.low)
+                .filter(SingleCardPrice.card_id == SingleCard.id)
+                .order_by(SingleCardPrice.ts.desc())
+                .limit(1)
+                .scalar_subquery()
+            )
+            # Subquery for first price (oldest with non-null low)
+            first_subq = (
+                s.query(SingleCardPrice.low)
+                .filter(SingleCardPrice.card_id == SingleCard.id)
+                .filter(SingleCardPrice.low.isnot(None))
+                .order_by(SingleCardPrice.ts.asc())
+                .limit(1)
+                .scalar_subquery()
+            )
+
+            # (current - first) / first
+            # Handle division by zero or nulls gracefully if needed, though SQL comparison rules might handle nulls
+            diff = (current_subq - first_subq) / first_subq
+
+            query = query.order_by(diff.asc() if sort_order == "asc" else diff.desc())
         else:
             # Default fallback sort
             query = query.order_by(SingleCard.name.asc())
@@ -572,19 +569,13 @@ def api_singles_list():
         return jsonify({"total": total, "rows": rows})
 
 
-
 @app.route("/cardwatch/single/<int:cid>")
 def single_card(cid):
     with get_db_session() as s:
         card = s.get(SingleCard, cid)
         if not card:
             return "Not found", 404
-        latest = (
-            s.query(SingleCardPrice)
-            .filter_by(card_id=card.id)
-            .order_by(SingleCardPrice.ts.desc())
-            .first()
-        )
+        latest = s.query(SingleCardPrice).filter_by(card_id=card.id).order_by(SingleCardPrice.ts.desc()).first()
         stats = calculate_card_stats(s, card)
         return render_template("single_card.html", card=card, latest=latest, stats=stats)
 
@@ -597,21 +588,17 @@ def seller_bundles():
     f_country = request.args.get("country", "All")
     try:
         f_min_cards = int(request.args.get("min_cards", 0))
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         f_min_cards = 0
 
     with get_db_session() as s:
         # Base query
-        query = (
-            s.query(SingleCardOffer)
-            .join(SingleCard)
-            .filter(SingleCard.is_enabled == 1)
-        )
+        query = s.query(SingleCardOffer).join(SingleCard).filter(SingleCard.is_enabled == 1)
 
         # Apply filters
         if f_lang != "All":
             query = query.filter(SingleCard.language == f_lang)
-        
+
         if f_country != "All":
             query = query.filter(SingleCardOffer.country == f_country)
 
@@ -619,17 +606,23 @@ def seller_bundles():
 
         # Get available options for dropdowns (global, unfiltered list mainly, or filtered? usually global for filters)
         # Actually standard UX is to show all available options
-        all_languages = [r[0] for r in s.query(SingleCard.language).distinct().order_by(SingleCard.language).all() if r[0]]
-        all_countries = [r[0] for r in s.query(SingleCardOffer.country).distinct().order_by(SingleCardOffer.country).all() if r[0]]
+        all_languages = [
+            r[0] for r in s.query(SingleCard.language).distinct().order_by(SingleCard.language).all() if r[0]
+        ]
+        all_countries = [
+            r[0] for r in s.query(SingleCardOffer.country).distinct().order_by(SingleCardOffer.country).all() if r[0]
+        ]
 
         if not offers:
-            return render_template("seller_bundles.html", 
-                                   sellers=[], 
-                                   all_languages=all_languages, 
-                                   all_countries=all_countries,
-                                   f_lang=f_lang,
-                                   f_country=f_country,
-                                   f_min_cards=f_min_cards)
+            return render_template(
+                "seller_bundles.html",
+                sellers=[],
+                all_languages=all_languages,
+                all_countries=all_countries,
+                f_lang=f_lang,
+                f_country=f_country,
+                f_min_cards=f_min_cards,
+            )
 
         # For "cheapest" calculation, we should probably consider the global cheapest for that card,
         # OR the cheapest within the filtered set?
@@ -640,25 +633,25 @@ def seller_bundles():
         # If I filter by "Japan", do I compare against "Japan" cheapest or "Global" cheapest?
         # The prompt says: "within 20% of the lowest price for each card."
         # Usually that implies global lowest.
-        
+
         # Implementation: Fetch ALL offers for the relevant cards to determine global lowest,
         # THEN filter the offers we want to display.
-        # But that might be heavy. 
-        # For now, let's stick to calculating cheapest based on what we fetched, 
+        # But that might be heavy.
+        # For now, let's stick to calculating cheapest based on what we fetched,
         # BUT if we filter by country, "lowest price" might become "lowest price in that country".
         # If the user wants to see if a bundle is good deal globally, comparing to local only might be misleading.
         # However, checking "global cheapest" requires querying all offers for these cards.
-        
+
         # Let's do a separate query for "global cheapest" for the cards present in our filtered offers.
         card_ids = set(o.card_id for o in offers)
-        
+
         # Get global cheapest for these cards
         global_cheapest_rows = (
-             s.query(SingleCardOffer.card_id, func.min(SingleCardOffer.price))
-             .filter(SingleCardOffer.card_id.in_(card_ids))
-             .filter(SingleCardOffer.price.isnot(None))
-             .group_by(SingleCardOffer.card_id)
-             .all()
+            s.query(SingleCardOffer.card_id, func.min(SingleCardOffer.price))
+            .filter(SingleCardOffer.card_id.in_(card_ids))
+            .filter(SingleCardOffer.price.isnot(None))
+            .group_by(SingleCardOffer.card_id)
+            .all()
         )
         cheapest_map = {row[0]: row[1] for row in global_cheapest_rows}
 
@@ -670,7 +663,7 @@ def seller_bundles():
             baseline = cheapest_map.get(offer.card_id)
             if baseline is None or offer.price is None:
                 continue
-            
+
             # 20% rule
             if offer.price > baseline * 1.2:
                 continue
@@ -702,21 +695,19 @@ def seller_bundles():
             entry["cheapest_total"] += baseline
 
         # Filter by min_cards
-        sellers = [
-            s for s in seller_map.values() 
-            if s["total_upcharge"] <= 20.0 and len(s["cards"]) >= f_min_cards
-        ]
-        sellers.sort(
-            key=lambda s: (-len(s["cards"]), s["total_upcharge"], s["bundle_total"])
+        sellers = [s for s in seller_map.values() if s["total_upcharge"] <= 20.0 and len(s["cards"]) >= f_min_cards]
+        sellers.sort(key=lambda s: (-len(s["cards"]), s["total_upcharge"], s["bundle_total"]))
+
+        return render_template(
+            "seller_bundles.html",
+            sellers=sellers,
+            all_languages=all_languages,
+            all_countries=all_countries,
+            f_lang=f_lang,
+            f_country=f_country,
+            f_min_cards=f_min_cards,
         )
 
-        return render_template("seller_bundles.html", 
-                               sellers=sellers,
-                               all_languages=all_languages, 
-                               all_countries=all_countries,
-                               f_lang=f_lang,
-                               f_country=f_country,
-                               f_min_cards=f_min_cards)
 
 @app.route("/cardwatch/product/<int:pid>")
 def product(pid):
@@ -733,6 +724,7 @@ def api_series(pid):
         points = s.query(Price).filter_by(product_id=pid).order_by(Price.ts).all()
         return jsonify([{"t": pr.ts.isoformat(), "low": pr.low, "avg5": pr.avg5} for pr in points])
 
+
 @app.route("/cardwatch/api/product/<int:pid>/daily")
 def api_daily(pid):
     with get_db_session() as s:
@@ -743,35 +735,16 @@ def api_daily(pid):
 @app.route("/cardwatch/api/single/<int:cid>/series")
 def api_single_series(cid):
     with get_db_session() as s:
-        points = (
-            s.query(SingleCardPrice)
-            .filter_by(card_id=cid)
-            .order_by(SingleCardPrice.ts)
-            .all()
-        )
-        return jsonify(
-            [
-                {"t": pr.ts.isoformat(), "low": pr.low, "avg5": pr.avg5}
-                for pr in points
-            ]
-        )
+        points = s.query(SingleCardPrice).filter_by(card_id=cid).order_by(SingleCardPrice.ts).all()
+        return jsonify([{"t": pr.ts.isoformat(), "low": pr.low, "avg5": pr.avg5} for pr in points])
 
 
 @app.route("/cardwatch/api/single/<int:cid>/daily")
 def api_single_daily(cid):
     with get_db_session() as s:
-        points = (
-            s.query(SingleCardDaily)
-            .filter_by(card_id=cid)
-            .order_by(SingleCardDaily.day)
-            .all()
-        )
-        return jsonify(
-            [
-                {"d": d.day.isoformat(), "low": d.low, "avg": d.avg}
-                for d in points
-            ]
-        )
+        points = s.query(SingleCardDaily).filter_by(card_id=cid).order_by(SingleCardDaily.day).all()
+        return jsonify([{"d": d.day.isoformat(), "low": d.low, "avg": d.avg} for d in points])
+
 
 @app.route("/cardwatch/add", methods=["POST"])
 def add():
@@ -817,9 +790,7 @@ def add_single():
     image_url = None
     if image_file and image_file.filename:
         try:
-            image_url = save_uploaded_image(
-                image_file, upload_folder=SINGLE_CARD_UPLOAD_FOLDER
-            )
+            image_url = save_uploaded_image(image_file, upload_folder=SINGLE_CARD_UPLOAD_FOLDER)
         except ValueError as exc:
             flash(str(exc))
             return redirect(url_for("singles"))
@@ -848,6 +819,7 @@ def add_single():
             print(f"[app] Error scraping new single card {cid}: {e}")
     return redirect(url_for("singles"))
 
+
 @app.route("/cardwatch/edit/<int:pid>", methods=["GET", "POST"])
 def edit(pid):
     with get_db_session() as s:
@@ -873,24 +845,29 @@ def edit(pid):
                     flash(f"Error: {e}")
         return render_template("edit.html", product=p)
 
+
 @app.route("/cardwatch/toggle/<int:pid>")
 def toggle(pid):
     with get_db_session() as s:
         p = s.query(Product).get(pid)
-        if not p: return "Not found", 404
+        if not p:
+            return "Not found", 404
         p.is_enabled = 0 if p.is_enabled else 1
         s.commit()
         return redirect(url_for("index"))
+
 
 @app.route("/cardwatch/delete/<int:pid>", methods=["POST"])
 def delete(pid):
     with get_db_session() as s:
         p = s.query(Product).get(pid)
-        if not p: return "Not found", 404
+        if not p:
+            return "Not found", 404
         s.delete(p)
         s.commit()
         flash("Deleted.")
         return redirect(url_for("index"))
+
 
 @app.route("/update-cookies", methods=["GET", "POST"])
 def update_cookies():
@@ -899,24 +876,19 @@ def update_cookies():
         if new_val:
             try:
                 from cookie_loader import update_cookie_in_file
+
                 update_cookie_in_file("cookies-cardmarket-com.txt", "cf_clearance", new_val)
-                
+
                 # Also reset the scraper status to OK tentatively
                 from scraper import update_scraper_status
+
                 update_scraper_status("ok", "Cookie updated by user.")
                 flash("Cookie updated successfully!", "success")
             except Exception as e:
                 flash(f"Error saving cookie: {e}", "danger")
-        return redirect(url_for('home'))
-        
+        return redirect(url_for("home"))
+
     return render_template("update_cookies.html")
-
-
-
-
-
-
-
 
 
 if __name__ == "__main__":

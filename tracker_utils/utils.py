@@ -7,19 +7,23 @@ def get_psa10_chf(psa10_usd, fx_chf):
         return float(psa10_usd) / fx_chf["USD"]
     return 0.0
 
+
 def valuation_base(price_chf, psa10_chf):
     return max(price_chf, psa10_chf)
+
 
 def get_reference_usd(item, charting_prices):
     """Return PSA10 if graded, ungraded if not"""
     prices = charting_prices.get(item.id, {})
     return prices.get("psa10_usd") if item.graded else prices.get("ungraded_usd")
 
+
 def get_reference_chf(ref_usd, fx_chf):
     """Convert reference USD price to CHF using correct FX"""
     if ref_usd:
         return ref_usd / fx_chf["USD"]
     return 0.0
+
 
 def get_paid_usd(item):
     fx = get_fx_rates(base=item.currency)
