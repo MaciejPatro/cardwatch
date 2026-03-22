@@ -490,3 +490,114 @@ def parse_ebay_invoice(pdf_path):
             pending_desc.append(line_s)
 
     return data
+
+
+def parse_ricardo_invoice(pdf_path):
+    """
+    Parses a Ricardo.ch PDF invoice.
+    Returns a dict with:
+      - order_id
+      - date
+      - seller_name
+      - total_amount
+      - currency
+      - shipping_cost
+      - vat_cost
+      - items: list of {name, price}
+      - type: 'sale'
+    """
+    print(f"Parsing Ricardo {pdf_path}...")
+    try:
+        args = ["pdftotext", "-layout", pdf_path, "-"]
+        result = subprocess.run(args, capture_output=True, text=True)
+        text = result.stdout
+    except Exception as e:
+        print(f"Error reading PDF: {e}")
+        return None
+    except FileNotFoundError:
+        print("pdftotext command not found.")
+        return None
+
+    data = {
+        "order_id": None,
+        "date": None,
+        "seller_name": "Ricardo.ch Seller",
+        "total_amount": 0.0,
+        "currency": "CHF",
+        "shipping_cost": 0.0,
+        "vat_cost": 0.0,
+        "items": [],
+        "type": "sale",  # Always sale
+    }
+
+    order_match = re.search(r"Artikelnummer\s+(\d+)", text)
+    if order_match:
+        data["order_id"] = order_match.group(1)
+
+    date_match = re.search(r"Kaufdatum\s+(\d{1,2}\.\s*[A-Za-zäöü]+\.?\s*\d{4})", text)
+    if date_match:
+        d_str = date_match.group(1)
+        replacements = {"März": "Mar", "Mär": "Mar", "Mai": "May", "Okt": "Oct", "Dez": "Dec"}
+        for k, v in replacements.items():
+            d_str = d_str.replace(k, v)
+        try:
+            d_str = re.sub(r"[\.\,]", " ", d_str)
+            d_str = re.sub(r"\s+", " ", d_str).strip()
+            dt = datetime.strptime(d_str, "%d %b %Y")
+            data["date"] = dt.strftime("%Y-%m-%d")
+        except ValueError as e:
+            print("Date parse error", e)
+
+    ship_match = re.search(r"Total Lieferkosten(?:.*)(?:CHF|EUR)\s+([\d.,]+)", text)
+    if ship_match:
+        data["shipping_cost"] = float(ship_match.group(1).replace("'", "").replace(",", ""))
+
+    lines = text.split("\n")
+    parsing_items = False
+
+    current_item_name = []
+
+    for idx, line in enumerate(lines):
+        if "Artikel" in line and "Anzahl" in line and "Kaufdatum" in line and "Preis" in line:
+            parsing_items = True
+            continue
+
+        if parsing_items:
+            if "Total Lieferkosten" in line or "Total Artikel" in line:
+                parsing_items = False
+                continue
+
+            line_s = line.strip()
+            if not line_s:
+                continue
+
+            item_match = re.match(
+                r"^(.*?)\s+(\d+)\s+(\d{1,2}\.\s+[a-zA-ZäöüÄÖÜ]+\.?\s+\d{4}.*?)\s+(CHF|EUR)\s+([\d.,]+)$", line_s
+            )
+
+            if item_match:
+                name_part = item_match.group(1).strip()
+                qty = int(item_match.group(2))
+                currency = item_match.group(4)
+                price = float(item_match.group(5).replace("'", "").replace(",", ""))
+                data["currency"] = currency
+
+                current_item_name = [name_part]
+                data["items"].append({"name": name_part, "price": price, "qty": qty})
+            else:
+                if line_s and "CHF" not in line_s and "EUR" not in line_s and not re.match(r"^\d{1,2}\.", line_s):
+                    if data["items"]:
+                        data["items"][-1]["name"] += " " + line_s
+
+    subtotal = sum(i["price"] * i.get("qty", 1) for i in data["items"])
+    data["total_amount"] = subtotal + data["shipping_cost"]
+
+    expanded_items = []
+    for item in data["items"]:
+        qty = item.pop("qty", 1)
+        name = re.sub(r"\s+", " ", item["name"])
+        for _ in range(qty):
+            expanded_items.append({"name": name, "price": item["price"]})
+    data["items"] = expanded_items
+
+    return data

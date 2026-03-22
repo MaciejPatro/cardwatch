@@ -32,6 +32,9 @@
         <button class="btn btn-primary ms-2" data-bs-toggle="modal" data-bs-target="#uploadEbayModal">
             🛒 Add from Ebay
         </button>
+        <button class="btn btn-danger ms-2" data-bs-toggle="modal" data-bs-target="#uploadRicardoModal">
+            🇨🇭 Add from Ricardo.ch
+        </button>
         <button class="btn btn-info ms-2" onclick="openRatesModal()">
             💱 Manage Rates
         </button>
@@ -40,6 +43,9 @@
         </button>
         <button class="btn btn-secondary ms-2" data-bs-toggle="modal" data-bs-target="#uploadShippingModal">
             📦 Upload Shipping
+        </button>
+        <button class="btn btn-warning ms-2" data-bs-toggle="modal" data-bs-target="#uploadRicardoFeesModal">
+            🧾 Upload Ricardo Fees
         </button>
         <button class="btn btn-secondary ms-2" data-bs-toggle="modal" data-bs-target="#uploadPlatformPairModal">
             🔄 Add from Payrexx
@@ -1482,6 +1488,29 @@
     </div>
 </div>
 
+<!-- Upload Ricardo Invoice Modal -->
+<div class="modal fade" id="uploadRicardoModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Upload Ricardo.ch Invoice (PDF)</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">Select PDF File</label>
+                    <input type="file" class="form-control" id="ricardoFile" accept=".pdf">
+                </div>
+                <div id="uploadRicardoError" class="alert alert-danger d-none"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" onclick="uploadRicardo()">Upload & Analyze</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Confirm Invoice Modal -->
 <div class="modal fade" id="confirmInvoiceModal" tabindex="-1">
     <div class="modal-dialog modal-lg">
@@ -1635,6 +1664,37 @@
             .catch(err => {
                 document.getElementById('uploadEbayError').textContent = 'Error uploading file.';
                 document.getElementById('uploadEbayError').classList.remove('d-none');
+            });
+    }
+
+    function uploadRicardo() {
+        const fileInput = document.getElementById('ricardoFile');
+        const file = fileInput.files[0];
+        if (!file) return;
+
+        const formData = new FormData();
+        formData.append('invoice_file', file);
+
+        fetch("{{ url_for('bookkeeping.upload_ricardo') }}", {
+            method: 'POST',
+            body: formData
+        })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    parsedData = data.data;
+                    tempFilename = data.temp_filename;
+                    showConfirmation(parsedData);
+                    bootstrap.Modal.getInstance(document.getElementById('uploadRicardoModal')).hide();
+                    new bootstrap.Modal(document.getElementById('confirmInvoiceModal')).show();
+                } else {
+                    document.getElementById('uploadRicardoError').textContent = data.error;
+                    document.getElementById('uploadRicardoError').classList.remove('d-none');
+                }
+            })
+            .catch(err => {
+                document.getElementById('uploadRicardoError').textContent = 'Error uploading file.';
+                document.getElementById('uploadRicardoError').classList.remove('d-none');
             });
     }
 
@@ -2134,6 +2194,78 @@
         }
 
         fetch('/cardwatch/bookkeeping/upload-shipping', {
+            method: 'POST',
+            body: formData
+        })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    const r = data.results;
+                    let msg = `Done! Processed: ${r.processed}. Added: ${r.added}. Duplicates detected: ${r.duplicates}.`;
+                    if (r.errors.length > 0) {
+                        msg += '<br>Errors:<br>' + r.errors.join('<br>');
+                        statusDiv.className = 'alert alert-warning';
+                    } else {
+                        statusDiv.className = 'alert alert-success';
+                    }
+                    statusDiv.innerHTML = msg;
+
+                    if (r.added > 0) {
+                        setTimeout(() => location.reload(), 2000);
+                    }
+                } else {
+                    statusDiv.className = 'alert alert-danger';
+                    statusDiv.textContent = 'Error: ' + data.error;
+                }
+            })
+            .catch(err => {
+                statusDiv.className = 'alert alert-danger';
+                statusDiv.textContent = 'Request failed.';
+            });
+    }
+</script>
+
+<!-- Upload Ricardo Fees Modal -->
+<div class="modal fade" id="uploadRicardoFeesModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Upload Ricardo Fees</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">Select Ricardo Fees PDFs</label>
+                    <input type="file" id="ricardoFeeFiles" class="form-control" accept=".pdf" multiple>
+                    <div class="form-text">Select one or more Ricardo fee invoices (e.g. 260210383969-1.pdf).</div>
+                </div>
+                <div id="ricardoFeesUploadStatus" class="alert d-none"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" onclick="uploadRicardoFees()">Upload & Process</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    function uploadRicardoFees() {
+        const fileInput = document.getElementById('ricardoFeeFiles');
+        const files = fileInput.files;
+        if (files.length === 0) return;
+
+        const statusDiv = document.getElementById('ricardoFeesUploadStatus');
+        statusDiv.className = 'alert alert-info';
+        statusDiv.textContent = 'Uploading and processing...';
+        statusDiv.classList.remove('d-none');
+
+        const formData = new FormData();
+        for (let i = 0; i < files.length; i++) {
+            formData.append('ricardo_fee_files', files[i]);
+        }
+
+        fetch('/cardwatch/bookkeeping/upload-ricardo-fees', {
             method: 'POST',
             body: formData
         })
